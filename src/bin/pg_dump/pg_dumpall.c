@@ -1317,6 +1317,10 @@ dumpDatabases(PGconn *conn)
 		else
 			create_opts = "--create";
 
+		/* Dump database-specific roles if server is running 15.0 or later */
+		if (server_version >= 150000)
+			dumpRoleMembership(conn, dbid);
+
 		if (filename)
 			fclose(OPF);
 
@@ -1326,10 +1330,6 @@ dumpDatabases(PGconn *conn)
 			pg_log_error("pg_dump failed on database \"%s\", exiting", dbname);
 			exit_nicely(1);
 		}
-
-		/* Dump database-specific roles if server is running 15.0 or later */
-		if (server_version >= 150000)
-			dumpRoleMembership(conn, dbid);
 
 		if (filename)
 		{
