@@ -38,7 +38,7 @@ static const char *RmgrNames[RM_MAX_ID + 1] = {
 static void extractPageInfo(XLogReaderState *record);
 
 static int	xlogreadfd = -1;
-static XLogSegNo xlogreadsegno = -1;
+static XLogSegNo xlogreadsegno = 0;
 static char xlogfpath[MAXPGPATH];
 
 typedef struct XLogPageReadPrivate
@@ -102,7 +102,9 @@ extractPageMap(const char *datadir, XLogRecPtr startpoint, int tliIndex,
 	 * If 'endpoint' didn't point exactly at a record boundary, the caller
 	 * messed up.
 	 */
-	Assert(xlogreader->EndRecPtr == endpoint);
+	if (xlogreader->EndRecPtr != endpoint)
+		pg_fatal("end pointer %X/%X is not a valid end point; expected %X/%X",
+				 LSN_FORMAT_ARGS(endpoint), LSN_FORMAT_ARGS(xlogreader->EndRecPtr));
 
 	XLogReaderFree(xlogreader);
 	if (xlogreadfd != -1)
@@ -432,7 +434,7 @@ extractPageInfo(XLogReaderState *record)
 				 RmgrNames[rmid], info);
 	}
 
-	for (block_id = 0; block_id <= record->max_block_id; block_id++)
+	for (block_id = 0; block_id <= XLogRecMaxBlockId(record); block_id++)
 	{
 		RelFileNode rnode;
 		ForkNumber	forknum;

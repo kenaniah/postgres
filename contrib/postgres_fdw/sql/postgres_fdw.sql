@@ -3431,6 +3431,23 @@ DROP TABLE base_tbl2;
 DROP TABLE result_tbl;
 DROP TABLE join_tbl;
 
+-- Test that an asynchronous fetch is processed before restarting the scan in
+-- ReScanForeignScan
+CREATE TABLE base_tbl (a int, b int);
+INSERT INTO base_tbl VALUES (1, 11), (2, 22), (3, 33);
+CREATE FOREIGN TABLE foreign_tbl (b int)
+  SERVER loopback OPTIONS (table_name 'base_tbl');
+CREATE FOREIGN TABLE foreign_tbl2 () INHERITS (foreign_tbl)
+  SERVER loopback OPTIONS (table_name 'base_tbl');
+
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT a FROM base_tbl WHERE a IN (SELECT a FROM foreign_tbl);
+SELECT a FROM base_tbl WHERE a IN (SELECT a FROM foreign_tbl);
+
+-- Clean up
+DROP FOREIGN TABLE foreign_tbl CASCADE;
+DROP TABLE base_tbl;
+
 ALTER SERVER loopback OPTIONS (DROP async_capable);
 ALTER SERVER loopback2 OPTIONS (DROP async_capable);
 
@@ -3484,6 +3501,63 @@ SELECT pg_terminate_backend(pid, 180000) FROM pg_stat_activity
     substring('fdw_' || current_setting('application_name') ||
       CURRENT_USER || '%' for current_setting('max_identifier_length')::int);
 
+-- Test %c (session ID) and %C (cluster name) escape sequences.
+SET postgres_fdw.application_name TO 'fdw_%C%c';
+SELECT 1 FROM ft6 LIMIT 1;
+SELECT pg_terminate_backend(pid, 180000) FROM pg_stat_activity
+  WHERE application_name =
+    substring('fdw_' || current_setting('cluster_name') ||
+      to_hex(trunc(EXTRACT(EPOCH FROM (SELECT backend_start FROM
+      pg_stat_get_activity(pg_backend_pid()))))::integer) || '.' ||
+      to_hex(pg_backend_pid())
+      for current_setting('max_identifier_length')::int);
+
 --Clean up
 RESET postgres_fdw.application_name;
 RESET debug_discard_caches;
+
+-- ===================================================================
+-- test parallel commit
+-- ===================================================================
+ALTER SERVER loopback OPTIONS (ADD parallel_commit 'true');
+ALTER SERVER loopback2 OPTIONS (ADD parallel_commit 'true');
+
+CREATE TABLE ploc1 (f1 int, f2 text);
+CREATE FOREIGN TABLE prem1 (f1 int, f2 text)
+  SERVER loopback OPTIONS (table_name 'ploc1');
+CREATE TABLE ploc2 (f1 int, f2 text);
+CREATE FOREIGN TABLE prem2 (f1 int, f2 text)
+  SERVER loopback2 OPTIONS (table_name 'ploc2');
+
+BEGIN;
+INSERT INTO prem1 VALUES (101, 'foo');
+INSERT INTO prem2 VALUES (201, 'bar');
+COMMIT;
+SELECT * FROM prem1;
+SELECT * FROM prem2;
+
+BEGIN;
+SAVEPOINT s;
+INSERT INTO prem1 VALUES (102, 'foofoo');
+INSERT INTO prem2 VALUES (202, 'barbar');
+RELEASE SAVEPOINT s;
+COMMIT;
+SELECT * FROM prem1;
+SELECT * FROM prem2;
+
+-- This tests executing DEALLOCATE ALL against foreign servers in parallel
+-- during pre-commit
+BEGIN;
+SAVEPOINT s;
+INSERT INTO prem1 VALUES (103, 'baz');
+INSERT INTO prem2 VALUES (203, 'qux');
+ROLLBACK TO SAVEPOINT s;
+RELEASE SAVEPOINT s;
+INSERT INTO prem1 VALUES (104, 'bazbaz');
+INSERT INTO prem2 VALUES (204, 'quxqux');
+COMMIT;
+SELECT * FROM prem1;
+SELECT * FROM prem2;
+
+ALTER SERVER loopback OPTIONS (DROP parallel_commit);
+ALTER SERVER loopback2 OPTIONS (DROP parallel_commit);
