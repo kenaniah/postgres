@@ -177,6 +177,11 @@ parse_bc_specification(bc_algorithm algorithm, char *specification,
 			result->level = expect_integer_value(keyword, value, result);
 			result->options |= BACKUP_COMPRESSION_OPTION_LEVEL;
 		}
+		else if (strcmp(keyword, "workers") == 0)
+		{
+			result->workers = expect_integer_value(keyword, value, result);
+			result->options |= BACKUP_COMPRESSION_OPTION_WORKERS;
+		}
 		else
 			result->parse_error =
 				psprintf(_("unknown compression option \"%s\""), keyword);
@@ -186,8 +191,16 @@ parse_bc_specification(bc_algorithm algorithm, char *specification,
 		if (value != NULL)
 			pfree(value);
 
-		/* If we got an error or have reached the end of the string, stop. */
-		if (result->parse_error != NULL || *kwend == '\0' || *vend == '\0')
+		/*
+		 * If we got an error or have reached the end of the string, stop.
+		 *
+		 * If there is no value, then the end of the keyword might have been
+		 * the end of the string. If there is a value, then the end of the
+		 * keyword cannot have been the end of the string, but the end of the
+		 * value might have been.
+		 */
+		if (result->parse_error != NULL ||
+			(vend == NULL ? *kwend == '\0' : *vend == '\0'))
 			break;
 
 		/* Advance to next entry and loop around. */
@@ -264,6 +277,17 @@ validate_bc_specification(bc_specification *spec)
 			return psprintf(_("compression algorithm \"%s\" expects a compression level between %d and %d"),
 							get_bc_algorithm_name(spec->algorithm),
 							min_level, max_level);
+	}
+
+	/*
+	 * Of the compression algorithms that we currently support, only zstd
+	 * allows parallel workers.
+	 */
+	if ((spec->options & BACKUP_COMPRESSION_OPTION_WORKERS) != 0 &&
+		(spec->algorithm != BACKUP_COMPRESSION_ZSTD))
+	{
+		return psprintf(_("compression algorithm \"%s\" does not accept a worker count"),
+						get_bc_algorithm_name(spec->algorithm));
 	}
 
 	return NULL;

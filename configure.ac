@@ -103,6 +103,9 @@ AC_SUBST(PORTNAME)
 need_tas=no
 tas_file=dummy.s
 
+# Default, works for most platforms, override in template file if needed
+DLSUFFIX=".so"
+
 
 
 ##
@@ -721,6 +724,10 @@ else
 fi
 AC_SUBST(TAS)
 
+AC_SUBST(DLSUFFIX)dnl
+AC_DEFINE_UNQUOTED([DLSUFFIX], ["$DLSUFFIX"],
+                   [Define to the file name extension of dynamically-loadable modules.])
+
 #
 # Set up pkg_config in case we need it below
 #
@@ -1066,7 +1073,7 @@ AC_MSG_RESULT([$with_zstd])
 AC_SUBST(with_zstd)
 
 if test "$with_zstd" = yes; then
-  PKG_CHECK_MODULES(ZSTD, libzstd)
+  PKG_CHECK_MODULES(ZSTD, libzstd >= 1.4.0)
   # We only care about -I, -D, and -L switches;
   # note that -lzstd will be added by AC_CHECK_LIB below.
   for pgac_option in $ZSTD_CFLAGS; do
@@ -1780,6 +1787,7 @@ AC_CHECK_FUNCS(m4_normalize([
 	getifaddrs
 	getpeerucred
 	getrlimit
+	inet_pton
 	kqueue
 	mbstowcs_l
 	memset_s
