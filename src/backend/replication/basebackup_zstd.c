@@ -3,7 +3,7 @@
  * basebackup_zstd.c
  *	  Basebackup sink implementing zstd compression.
  *
- * Portions Copyright (c) 2010-2020, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2022, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/basebackup_zstd.c
@@ -26,7 +26,7 @@ typedef struct bbsink_zstd
 	bbsink		base;
 
 	/* Compression options */
-	bc_specification *compress;
+	pg_compress_specification *compress;
 
 	ZSTD_CCtx  *cctx;
 	ZSTD_outBuffer zstd_outBuf;
@@ -41,7 +41,7 @@ static void bbsink_zstd_cleanup(bbsink *sink);
 static void bbsink_zstd_end_backup(bbsink *sink, XLogRecPtr endptr,
 								   TimeLineID endtli);
 
-const bbsink_ops bbsink_zstd_ops = {
+static const bbsink_ops bbsink_zstd_ops = {
 	.begin_backup = bbsink_zstd_begin_backup,
 	.begin_archive = bbsink_zstd_begin_archive,
 	.archive_contents = bbsink_zstd_archive_contents,
@@ -58,7 +58,7 @@ const bbsink_ops bbsink_zstd_ops = {
  * Create a new basebackup sink that performs zstd compression.
  */
 bbsink *
-bbsink_zstd_new(bbsink *next, bc_specification *compress)
+bbsink_zstd_new(bbsink *next, pg_compress_specification *compress)
 {
 #ifndef USE_ZSTD
 	ereport(ERROR,
@@ -90,13 +90,13 @@ bbsink_zstd_begin_backup(bbsink *sink)
 	bbsink_zstd *mysink = (bbsink_zstd *) sink;
 	size_t		output_buffer_bound;
 	size_t		ret;
-	bc_specification *compress = mysink->compress;
+	pg_compress_specification *compress = mysink->compress;
 
 	mysink->cctx = ZSTD_createCCtx();
 	if (!mysink->cctx)
 		elog(ERROR, "could not create zstd compression context");
 
-	if ((compress->options & BACKUP_COMPRESSION_OPTION_LEVEL) != 0)
+	if ((compress->options & PG_COMPRESSION_OPTION_LEVEL) != 0)
 	{
 		ret = ZSTD_CCtx_setParameter(mysink->cctx, ZSTD_c_compressionLevel,
 									 compress->level);
@@ -105,12 +105,12 @@ bbsink_zstd_begin_backup(bbsink *sink)
 				 compress->level, ZSTD_getErrorName(ret));
 	}
 
-	if ((compress->options & BACKUP_COMPRESSION_OPTION_WORKERS) != 0)
+	if ((compress->options & PG_COMPRESSION_OPTION_WORKERS) != 0)
 	{
 		/*
-		 * On older versions of libzstd, this option does not exist, and trying
-		 * to set it will fail. Similarly for newer versions if they are
-		 * compiled without threading support.
+		 * On older versions of libzstd, this option does not exist, and
+		 * trying to set it will fail. Similarly for newer versions if they
+		 * are compiled without threading support.
 		 */
 		ret = ZSTD_CCtx_setParameter(mysink->cctx, ZSTD_c_nbWorkers,
 									 compress->workers);

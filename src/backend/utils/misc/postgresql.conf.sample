@@ -147,7 +147,7 @@
 					#   sysv
 					#   windows
 					# (change requires restart)
-#dynamic_shared_memory_type = posix	# the default is the first option
+#dynamic_shared_memory_type = posix	# the default is usually the first option
 					# supported by the operating system:
 					#   posix
 					#   sysv
@@ -240,6 +240,12 @@
 #checkpoint_warning = 30s		# 0 disables
 #max_wal_size = 1GB
 #min_wal_size = 80MB
+
+# - Prefetching during recovery -
+
+#recovery_prefetch = try		# prefetch pages referenced in the WAL?
+#wal_decode_buffer_size = 512kB		# lookahead window used for prefetching
+					# (change requires restart)
 
 # - Archiving -
 
@@ -443,7 +449,7 @@
 					# logging_collector to be on.
 
 # This is used when logging to stderr:
-#logging_collector = off		# Enable capturing of stderr, jsonlog
+#logging_collector = off		# Enable capturing of stderr, jsonlog,
 					# and csvlog into log files. Required
 					# to be on for csvlogs and jsonlogs.
 					# (change requires restart)
@@ -530,9 +536,9 @@
 					# statements from all transactions, 0.0 never logs
 
 #log_startup_progress_interval = 10s	# Time between progress updates for
-										# long-running startup operations.
-										# 0 disables the feature, > 0 indicates
-										# the interval in milliseconds.
+					# long-running startup operations.
+					# 0 disables the feature, > 0 indicates
+					# the interval in milliseconds.
 
 # - What to Log -
 
@@ -605,7 +611,7 @@
 # STATISTICS
 #------------------------------------------------------------------------------
 
-# - Query and Index Statistics Collector -
+# - Cumulative Query and Index Statistics -
 
 #track_activities = on
 #track_activity_query_size = 1024	# (change requires restart)
@@ -613,7 +619,7 @@
 #track_io_timing = off
 #track_wal_io_timing = off
 #track_functions = none			# none, pl, all
-#stats_temp_directory = 'pg_stat_tmp'
+#stats_fetch_consistency = cache
 
 
 # - Monitoring -

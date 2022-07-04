@@ -742,8 +742,7 @@ PQclear(PGresult *res)
 		free(res->events[i].name);
 	}
 
-	if (res->events)
-		free(res->events);
+	free(res->events);
 
 	/* Free all the subsidiary blocks */
 	while ((block = res->curBlock) != NULL)
@@ -753,8 +752,7 @@ PQclear(PGresult *res)
 	}
 
 	/* Free the top-level tuple pointer array */
-	if (res->tuples)
-		free(res->tuples);
+	free(res->tuples);
 
 	/* zero out the pointer fields to catch programming errors */
 	res->attDescs = NULL;
@@ -777,12 +775,10 @@ PQclear(PGresult *res)
 void
 pqClearAsyncResult(PGconn *conn)
 {
-	if (conn->result)
-		PQclear(conn->result);
+	PQclear(conn->result);
 	conn->result = NULL;
 	conn->error_result = false;
-	if (conn->next_result)
-		PQclear(conn->next_result);
+	PQclear(conn->next_result);
 	conn->next_result = NULL;
 }
 
@@ -1196,6 +1192,7 @@ pqSaveParameterStatus(PGconn *conn, const char *name, const char *value)
  *	  Returns 1 if OK, 0 if error occurred.
  *
  * On error, *errmsgp can be set to an error string to be returned.
+ * (Such a string should already be translated via libpq_gettext().)
  * If it is left NULL, the error is presumed to be "out of memory".
  *
  * In single-row mode, we create a new result holding just the current row,
@@ -1986,7 +1983,7 @@ PQsetSingleRowMode(PGconn *conn)
 		(conn->cmd_queue_head->queryclass != PGQUERY_SIMPLE &&
 		 conn->cmd_queue_head->queryclass != PGQUERY_EXTENDED))
 		return 0;
-	if (conn->result || conn->error_result)
+	if (pgHavePendingResult(conn))
 		return 0;
 
 	/* OK, set flag */
@@ -2438,8 +2435,7 @@ PQexecFinish(PGconn *conn)
 	lastResult = NULL;
 	while ((result = PQgetResult(conn)) != NULL)
 	{
-		if (lastResult)
-			PQclear(lastResult);
+		PQclear(lastResult);
 		lastResult = result;
 		if (result->resultStatus == PGRES_COPY_IN ||
 			result->resultStatus == PGRES_COPY_OUT ||
@@ -2941,7 +2937,7 @@ PQfn(PGconn *conn,
 	}
 
 	if (conn->sock == PGINVALID_SOCKET || conn->asyncStatus != PGASYNC_IDLE ||
-		conn->result || conn->error_result)
+		pgHavePendingResult(conn))
 	{
 		appendPQExpBufferStr(&conn->errorMessage,
 							 libpq_gettext("connection in wrong state\n"));

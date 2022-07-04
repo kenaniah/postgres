@@ -212,6 +212,8 @@ typedef enum NodeTag
 	T_JsonExpr,
 	T_JsonCoercion,
 	T_JsonItemCoercions,
+	T_JsonTableParent,
+	T_JsonTableSibling,
 
 	/*
 	 * TAGS FOR EXPRESSION STATE NODES (execnodes.h)
@@ -315,6 +317,7 @@ typedef enum NodeTag
 	T_List,
 	T_IntList,
 	T_OidList,
+	T_XidList,
 
 	/*
 	 * TAGS FOR EXTENSIBLE NODES (extensible.h)
@@ -514,6 +517,9 @@ typedef enum NodeTag
 	T_JsonArrayAgg,
 	T_JsonFuncExpr,
 	T_JsonIsPredicate,
+	T_JsonTable,
+	T_JsonTableColumn,
+	T_JsonTablePlan,
 	T_JsonCommon,
 	T_JsonArgument,
 	T_JsonKeyValue,
@@ -555,7 +561,8 @@ typedef enum NodeTag
 	T_SupportRequestSelectivity,	/* in nodes/supportnodes.h */
 	T_SupportRequestCost,		/* in nodes/supportnodes.h */
 	T_SupportRequestRows,		/* in nodes/supportnodes.h */
-	T_SupportRequestIndexCondition	/* in nodes/supportnodes.h */
+	T_SupportRequestIndexCondition, /* in nodes/supportnodes.h */
+	T_SupportRequestWFuncMonotonic	/* in nodes/supportnodes.h */
 } NodeTag;
 
 /*
@@ -699,7 +706,8 @@ extern bool equal(const void *a, const void *b);
  */
 typedef double Selectivity;		/* fraction of tuples a qualifier will pass */
 typedef double Cost;			/* execution cost (in page-access units) */
-typedef double Cardinality;		/* (estimated) number of rows or other integer count */
+typedef double Cardinality;		/* (estimated) number of rows or other integer
+								 * count */
 
 
 /*

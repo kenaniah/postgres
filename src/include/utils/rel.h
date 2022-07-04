@@ -155,11 +155,10 @@ typedef struct RelationData
 	List	   *rd_statlist;	/* list of OIDs of extended stats */
 
 	/* data managed by RelationGetIndexAttrBitmap: */
-	bool		rd_attrsvalid;	/* are bitmaps of attrs valid? */
+	Bitmapset  *rd_indexattr;	/* identifies columns used in indexes */
 	Bitmapset  *rd_keyattr;		/* cols that can be ref'd by foreign keys */
 	Bitmapset  *rd_pkattr;		/* cols included in primary key */
 	Bitmapset  *rd_idattr;		/* included in replica identity index */
-	Bitmapset  *rd_hotblockingattr;	/* cols blocking HOT update */
 
 	PublicationDesc *rd_pubdesc;	/* publication descriptor, or NULL */
 
@@ -246,6 +245,7 @@ typedef struct RelationData
 	 */
 	Oid			rd_toastoid;	/* Real TOAST table's OID, or InvalidOid */
 
+	bool		pgstat_enabled; /* should relation stats be counted */
 	/* use "struct" here to avoid needing to include pgstat.h: */
 	struct PgStat_TableStatus *pgstat_info; /* statistics collection area */
 } RelationData;

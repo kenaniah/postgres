@@ -538,10 +538,7 @@ pg_blocking_pids(PG_FUNCTION_ARGS)
 	/* Assert we didn't overrun arrayelems[] */
 	Assert(narrayelems <= lockData->nlocks);
 
-	/* Construct array, using hardwired knowledge about int4 type */
-	PG_RETURN_ARRAYTYPE_P(construct_array(arrayelems, narrayelems,
-										  INT4OID,
-										  sizeof(int32), true, TYPALIGN_INT));
+	PG_RETURN_ARRAYTYPE_P(construct_array_builtin(arrayelems, narrayelems, INT4OID));
 }
 
 
@@ -559,14 +556,13 @@ pg_safe_snapshot_blocking_pids(PG_FUNCTION_ARGS)
 	int		   *blockers;
 	int			num_blockers;
 	Datum	   *blocker_datums;
-	int			max_backends = GetMaxBackends();
 
 	/* A buffer big enough for any possible blocker list without truncation */
-	blockers = (int *) palloc(max_backends * sizeof(int));
+	blockers = (int *) palloc(MaxBackends * sizeof(int));
 
 	/* Collect a snapshot of processes waited for by GetSafeSnapshot */
 	num_blockers =
-		GetSafeSnapshotBlockingPids(blocked_pid, blockers, max_backends);
+		GetSafeSnapshotBlockingPids(blocked_pid, blockers, MaxBackends);
 
 	/* Convert int array to Datum array */
 	if (num_blockers > 0)
@@ -580,10 +576,7 @@ pg_safe_snapshot_blocking_pids(PG_FUNCTION_ARGS)
 	else
 		blocker_datums = NULL;
 
-	/* Construct array, using hardwired knowledge about int4 type */
-	PG_RETURN_ARRAYTYPE_P(construct_array(blocker_datums, num_blockers,
-										  INT4OID,
-										  sizeof(int32), true, TYPALIGN_INT));
+	PG_RETURN_ARRAYTYPE_P(construct_array_builtin(blocker_datums, num_blockers, INT4OID));
 }
 
 

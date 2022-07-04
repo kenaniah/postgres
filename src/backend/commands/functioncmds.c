@@ -468,10 +468,8 @@ interpret_function_parameter_list(ParseState *pstate,
 
 	if (outCount > 0 || varCount > 0)
 	{
-		*allParameterTypes = construct_array(allTypes, parameterCount, OIDOID,
-											 sizeof(Oid), true, TYPALIGN_INT);
-		*parameterModes = construct_array(paramModes, parameterCount, CHAROID,
-										  1, true, TYPALIGN_CHAR);
+		*allParameterTypes = construct_array_builtin(allTypes, parameterCount, OIDOID);
+		*parameterModes = construct_array_builtin(paramModes, parameterCount, CHAROID);
 		if (outCount > 1)
 			*requiredResultType = RECORDOID;
 		/* otherwise we set requiredResultType correctly above */
@@ -489,8 +487,7 @@ interpret_function_parameter_list(ParseState *pstate,
 			if (paramNames[i] == PointerGetDatum(NULL))
 				paramNames[i] = CStringGetTextDatum("");
 		}
-		*parameterNames = construct_array(paramNames, parameterCount, TEXTOID,
-										  -1, false, TYPALIGN_INT);
+		*parameterNames = construct_array_builtin(paramNames, parameterCount, TEXTOID);
 	}
 	else
 		*parameterNames = NULL;
@@ -1222,8 +1219,7 @@ CreateFunction(ParseState *pstate, CreateFunctionStmt *stmt)
 		i = 0;
 		foreach(lc, trftypes_list)
 			arr[i++] = ObjectIdGetDatum(lfirst_oid(lc));
-		trftypes = construct_array(arr, list_length(trftypes_list),
-								   OIDOID, sizeof(Oid), true, TYPALIGN_INT);
+		trftypes = construct_array_builtin(arr, list_length(trftypes_list), OIDOID);
 	}
 	else
 	{
@@ -1324,6 +1320,8 @@ RemoveFunctionById(Oid funcOid)
 	ReleaseSysCache(tup);
 
 	table_close(relation, RowExclusiveLock);
+
+	pgstat_drop_function(funcOid);
 
 	/*
 	 * If there's a pg_aggregate tuple, delete that too.
@@ -1470,6 +1468,8 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 
 		procForm->prosupport = newsupport;
 	}
+	if (parallel_item)
+		procForm->proparallel = interpret_func_parallel(parallel_item);
 	if (set_items)
 	{
 		Datum		datum;
@@ -1504,8 +1504,7 @@ AlterFunction(ParseState *pstate, AlterFunctionStmt *stmt)
 		tup = heap_modify_tuple(tup, RelationGetDescr(rel),
 								repl_val, repl_null, repl_repl);
 	}
-	if (parallel_item)
-		procForm->proparallel = interpret_func_parallel(parallel_item);
+	/* DO NOT put more touches of procForm below here; it's now dangling. */
 
 	/* Do the update */
 	CatalogTupleUpdate(rel, &tup->t_self, tup);

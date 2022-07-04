@@ -285,6 +285,21 @@ InitWalSender(void)
 	MarkPostmasterChildWalSender();
 	SendPostmasterSignal(PMSIGNAL_ADVANCE_STATE_MACHINE);
 
+	/*
+	 * If the client didn't specify a database to connect to, show in PGPROC
+	 * that our advertised xmin should affect vacuum horizons in all
+	 * databases.  This allows physical replication clients to send hot
+	 * standby feedback that will delay vacuum cleanup in all databases.
+	 */
+	if (MyDatabaseId == InvalidOid)
+	{
+		Assert(MyProc->xmin == InvalidTransactionId);
+		LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+		MyProc->statusFlags |= PROC_AFFECTS_ALL_HORIZONS;
+		ProcGlobal->statusFlags[MyProc->pgxactoff] = MyProc->statusFlags;
+		LWLockRelease(ProcArrayLock);
+	}
+
 	/* Initialize empty timestamp buffer for lag tracking. */
 	lag_tracker = MemoryContextAllocZero(TopMemoryContext, sizeof(LagTracker));
 }
@@ -429,7 +444,7 @@ IdentifySystem(void)
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 1, "systemid",
 							  TEXTOID, -1, 0);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 2, "timeline",
-							  INT4OID, -1, 0);
+							  INT8OID, -1, 0);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 3, "xlogpos",
 							  TEXTOID, -1, 0);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 4, "dbname",
@@ -442,7 +457,7 @@ IdentifySystem(void)
 	values[0] = CStringGetTextDatum(sysid);
 
 	/* column 2: timeline */
-	values[1] = Int32GetDatum(currTLI);
+	values[1] = Int64GetDatum(currTLI);
 
 	/* column 3: wal location */
 	values[2] = CStringGetTextDatum(xloc);
@@ -564,6 +579,8 @@ ReadReplicationSlot(ReadReplicationSlotCmd *cmd)
 static void
 SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 {
+	DestReceiver *dest;
+	TupleDesc	tupdesc;
 	StringInfoData buf;
 	char		histfname[MAXFNAMELEN];
 	char		path[MAXPGPATH];
@@ -572,36 +589,21 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 	off_t		bytesleft;
 	Size		len;
 
+	dest = CreateDestReceiver(DestRemoteSimple);
+
 	/*
 	 * Reply with a result set with one row, and two columns. The first col is
 	 * the name of the history file, 2nd is the contents.
 	 */
+	tupdesc = CreateTemplateTupleDesc(2);
+	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 1, "filename", TEXTOID, -1, 0);
+	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 2, "content", TEXTOID, -1, 0);
 
 	TLHistoryFileName(histfname, cmd->timeline);
 	TLHistoryFilePath(path, cmd->timeline);
 
 	/* Send a RowDescription message */
-	pq_beginmessage(&buf, 'T');
-	pq_sendint16(&buf, 2);		/* 2 fields */
-
-	/* first field */
-	pq_sendstring(&buf, "filename");	/* col name */
-	pq_sendint32(&buf, 0);		/* table oid */
-	pq_sendint16(&buf, 0);		/* attnum */
-	pq_sendint32(&buf, TEXTOID);	/* type oid */
-	pq_sendint16(&buf, -1);		/* typlen */
-	pq_sendint32(&buf, 0);		/* typmod */
-	pq_sendint16(&buf, 0);		/* format code */
-
-	/* second field */
-	pq_sendstring(&buf, "content"); /* col name */
-	pq_sendint32(&buf, 0);		/* table oid */
-	pq_sendint16(&buf, 0);		/* attnum */
-	pq_sendint32(&buf, TEXTOID);	/* type oid */
-	pq_sendint16(&buf, -1);		/* typlen */
-	pq_sendint32(&buf, 0);		/* typmod */
-	pq_sendint16(&buf, 0);		/* format code */
-	pq_endmessage(&buf);
+	dest->rStartup(dest, CMD_SELECT, tupdesc);
 
 	/* Send a DataRow message */
 	pq_beginmessage(&buf, 'D');
@@ -1000,7 +1002,6 @@ parseCreateReplSlotOptions(CreateReplicationSlotCmd *cmd,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("unrecognized value for CREATE_REPLICATION_SLOT option \"%s\": \"%s\"",
 								defel->defname, action)));
-
 		}
 		else if (strcmp(defel->defname, "reserve_wal") == 0)
 		{
@@ -1468,14 +1469,20 @@ WalSndUpdateProgress(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId 
 {
 	static TimestampTz sendTime = 0;
 	TimestampTz now = GetCurrentTimestamp();
+	bool		pending_writes = false;
+	bool		end_xact = ctx->end_xact;
 
 	/*
 	 * Track lag no more than once per WALSND_LOGICAL_LAG_TRACK_INTERVAL_MS to
 	 * avoid flooding the lag tracker when we commit frequently.
+	 *
+	 * We don't have a mechanism to get the ack for any LSN other than end
+	 * xact LSN from the downstream. So, we track lag only for end of
+	 * transaction LSN.
 	 */
 #define WALSND_LOGICAL_LAG_TRACK_INTERVAL_MS	1000
-	if (TimestampDifferenceExceeds(sendTime, now,
-								   WALSND_LOGICAL_LAG_TRACK_INTERVAL_MS))
+	if (end_xact && TimestampDifferenceExceeds(sendTime, now,
+											   WALSND_LOGICAL_LAG_TRACK_INTERVAL_MS))
 	{
 		LagTrackerWrite(lsn, now);
 		sendTime = now;
@@ -1485,9 +1492,9 @@ WalSndUpdateProgress(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId 
 	 * When skipping empty transactions in synchronous replication, we send a
 	 * keepalive message to avoid delaying such transactions.
 	 *
-	 * It is okay to check sync_standbys_defined flag without lock here as
-	 * in the worst case we will just send an extra keepalive message when it
-	 * is really not required.
+	 * It is okay to check sync_standbys_defined flag without lock here as in
+	 * the worst case we will just send an extra keepalive message when it is
+	 * really not required.
 	 */
 	if (skipped_xact &&
 		SyncRepRequested() &&
@@ -1501,8 +1508,20 @@ WalSndUpdateProgress(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId 
 
 		/* If we have pending write here, make sure it's actually flushed */
 		if (pq_is_send_pending())
-			ProcessPendingWrites();
+			pending_writes = true;
 	}
+
+	/*
+	 * Process pending writes if any or try to send a keepalive if required.
+	 * We don't need to try sending keep alive messages at the transaction end
+	 * as that will be done at a later point in time. This is required only
+	 * for large transactions where we don't send any changes to the
+	 * downstream and the receiver can timeout due to that.
+	 */
+	if (pending_writes || (!end_xact &&
+						   now >= TimestampTzPlusMilliseconds(last_reply_timestamp,
+															  wal_sender_timeout / 2)))
+		ProcessPendingWrites();
 }
 
 /*

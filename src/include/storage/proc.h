@@ -60,17 +60,19 @@ struct XidCache
 #define		PROC_VACUUM_FOR_WRAPAROUND	0x08	/* set by autovac only */
 #define		PROC_IN_LOGICAL_DECODING	0x10	/* currently doing logical
 												 * decoding outside xact */
+#define		PROC_AFFECTS_ALL_HORIZONS	0x20	/* this proc's xmin must be
+												 * included in vacuum horizons
+												 * in all databases */
 
 /* flags reset at EOXact */
 #define		PROC_VACUUM_STATE_MASK \
 	(PROC_IN_VACUUM | PROC_IN_SAFE_IC | PROC_VACUUM_FOR_WRAPAROUND)
 
 /*
- * Flags that are valid to copy from another proc, the parallel leader
- * process in practice.  Currently, flags that are set during parallel
- * vacuum and parallel index creation are allowed.
+ * Xmin-related flags. Make sure any flags that affect how the process' Xmin
+ * value is interpreted by VACUUM are included here.
  */
-#define		PROC_COPYABLE_FLAGS (PROC_IN_VACUUM | PROC_IN_SAFE_IC)
+#define		PROC_XMIN_FLAGS (PROC_IN_VACUUM | PROC_IN_SAFE_IC)
 
 /*
  * We allow a small number of "weak" relation locks (AccessShareLock,
@@ -226,7 +228,7 @@ struct PGPROC
 	pg_atomic_uint64 waitStart; /* time at which wait for lock acquisition
 								 * started */
 
-	int			delayChkpt;		/* for DELAY_CHKPT_* flags */
+	int			delayChkptFlags;	/* for DELAY_CHKPT_* flags */
 
 	uint8		statusFlags;	/* this backend's status flags, see PROC_*
 								 * above. mirrored in
@@ -400,7 +402,7 @@ typedef struct PROC_HDR
 
 extern PGDLLIMPORT PROC_HDR *ProcGlobal;
 
-extern PGPROC *PreparedXactProcs;
+extern PGDLLIMPORT PGPROC *PreparedXactProcs;
 
 /* Accessor for PGPROC given a pgprocno. */
 #define GetPGProcByNumber(n) (&ProcGlobal->allProcs[(n)])
@@ -421,7 +423,7 @@ extern PGDLLIMPORT int StatementTimeout;
 extern PGDLLIMPORT int LockTimeout;
 extern PGDLLIMPORT int IdleInTransactionSessionTimeout;
 extern PGDLLIMPORT int IdleSessionTimeout;
-extern bool log_lock_waits;
+extern PGDLLIMPORT bool log_lock_waits;
 
 
 /*

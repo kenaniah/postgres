@@ -44,9 +44,9 @@ typedef struct JsonUniqueHashEntry
 /* Context for key uniqueness check in builder functions */
 typedef struct JsonUniqueBuilderState
 {
-	JsonUniqueCheckState check;	/* unique check */
+	JsonUniqueCheckState check; /* unique check */
 	StringInfoData skipped_keys;	/* skipped keys with NULL values */
-	MemoryContext mcxt;				/* context for saving skipped keys */
+	MemoryContext mcxt;			/* context for saving skipped keys */
 } JsonUniqueBuilderState;
 
 /* Element of object stack for key uniqueness check during json parsing */
@@ -774,10 +774,10 @@ to_json_is_immutable(Oid typoid)
 			return false;
 
 		case JSONTYPE_ARRAY:
-			return false;	/* TODO recurse into elements */
+			return false;		/* TODO recurse into elements */
 
 		case JSONTYPE_COMPOSITE:
-			return false;	/* TODO recurse into fields */
+			return false;		/* TODO recurse into fields */
 
 		case JSONTYPE_NUMERIC:
 		case JSONTYPE_CAST:
@@ -938,7 +938,7 @@ static uint32
 json_unique_hash(const void *key, Size keysize)
 {
 	const JsonUniqueHashEntry *entry = (JsonUniqueHashEntry *) key;
-	uint32		hash =  hash_bytes_uint32(entry->object_id);
+	uint32		hash = hash_bytes_uint32(entry->object_id);
 
 	hash ^= hash_bytes((const unsigned char *) entry->key, entry->key_len);
 
@@ -979,12 +979,6 @@ json_unique_check_init(JsonUniqueCheckState *cxt)
 					   HASH_ELEM | HASH_CONTEXT | HASH_FUNCTION | HASH_COMPARE);
 }
 
-static void
-json_unique_check_free(JsonUniqueCheckState *cxt)
-{
-	hash_destroy(*cxt);
-}
-
 static bool
 json_unique_check_key(JsonUniqueCheckState *cxt, const char *key, int object_id)
 {
@@ -1008,15 +1002,6 @@ json_unique_builder_init(JsonUniqueBuilderState *cxt)
 	cxt->skipped_keys.data = NULL;
 }
 
-static void
-json_unique_builder_free(JsonUniqueBuilderState *cxt)
-{
-	json_unique_check_free(&cxt->check);
-
-	if (cxt->skipped_keys.data)
-		pfree(cxt->skipped_keys.data);
-}
-
 /* On-demand initialization of skipped_keys StringInfo structure */
 static StringInfo
 json_unique_builder_get_skipped_keys(JsonUniqueBuilderState *cxt)
@@ -1026,6 +1011,7 @@ json_unique_builder_get_skipped_keys(JsonUniqueBuilderState *cxt)
 	if (!out->data)
 	{
 		MemoryContext oldcxt = MemoryContextSwitchTo(cxt->mcxt);
+
 		initStringInfo(out);
 		MemoryContextSwitchTo(oldcxt);
 	}
@@ -1131,8 +1117,8 @@ json_object_agg_transfn_worker(FunctionCallInfo fcinfo,
 		out = state->str;
 
 		/*
-		 * Append comma delimiter only if we have already outputted some fields
-		 * after the initial string "{ ".
+		 * Append comma delimiter only if we have already outputted some
+		 * fields after the initial string "{ ".
 		 */
 		if (out->len > 2)
 			appendStringInfoString(out, ", ");
@@ -1224,8 +1210,6 @@ json_object_agg_finalfn(PG_FUNCTION_ARGS)
 	if (state == NULL)
 		PG_RETURN_NULL();
 
-	json_unique_builder_free(&state->unique_check);
-
 	/* Else return state with appropriate object terminator added */
 	PG_RETURN_TEXT_P(catenate_stringinfo_string(state->str, " }"));
 }
@@ -1302,7 +1286,7 @@ json_build_object_worker(int nargs, Datum *args, bool *nulls, Oid *types,
 		if (nulls[i])
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("argument %d cannot be null",  i + 1),
+					 errmsg("argument %d cannot be null", i + 1),
 					 errhint("Object keys should be text.")));
 
 		/* save key offset before key appending */
@@ -1332,9 +1316,6 @@ json_build_object_worker(int nargs, Datum *args, bool *nulls, Oid *types,
 
 	appendStringInfoChar(result, '}');
 
-	if (unique_keys)
-		json_unique_builder_free(&unique_check);
-
 	return PointerGetDatum(cstring_to_text_with_len(result->data, result->len));
 }
 
@@ -1347,6 +1328,7 @@ json_build_object(PG_FUNCTION_ARGS)
 	Datum	   *args;
 	bool	   *nulls;
 	Oid		   *types;
+
 	/* build argument values to build the object */
 	int			nargs = extract_variadic_args(fcinfo, 0, true,
 											  &args, &types, &nulls);
@@ -1402,6 +1384,7 @@ json_build_array(PG_FUNCTION_ARGS)
 	Datum	   *args;
 	bool	   *nulls;
 	Oid		   *types;
+
 	/* build argument values to build the object */
 	int			nargs = extract_variadic_args(fcinfo, 0, true,
 											  &args, &types, &nulls);
@@ -1467,9 +1450,7 @@ json_object(PG_FUNCTION_ARGS)
 					 errmsg("wrong number of array subscripts")));
 	}
 
-	deconstruct_array(in_array,
-					  TEXTOID, -1, false, TYPALIGN_INT,
-					  &in_datums, &in_nulls, &in_count);
+	deconstruct_array_builtin(in_array, TEXTOID, &in_datums, &in_nulls, &in_count);
 
 	count = in_count / 2;
 
@@ -1509,7 +1490,6 @@ json_object(PG_FUNCTION_ARGS)
 	pfree(result.data);
 
 	PG_RETURN_TEXT_P(rval);
-
 }
 
 /*
@@ -1544,13 +1524,8 @@ json_object_two_arg(PG_FUNCTION_ARGS)
 	if (nkdims == 0)
 		PG_RETURN_DATUM(CStringGetTextDatum("{}"));
 
-	deconstruct_array(key_array,
-					  TEXTOID, -1, false, TYPALIGN_INT,
-					  &key_datums, &key_nulls, &key_count);
-
-	deconstruct_array(val_array,
-					  TEXTOID, -1, false, TYPALIGN_INT,
-					  &val_datums, &val_nulls, &val_count);
+	deconstruct_array_builtin(key_array, TEXTOID, &key_datums, &key_nulls, &key_count);
+	deconstruct_array_builtin(val_array, TEXTOID, &val_datums, &val_nulls, &val_count);
 
 	if (key_count != val_count)
 		ereport(ERROR,
@@ -1727,7 +1702,7 @@ json_validate(text *json, bool check_unique_keys, bool throw_error)
 		if (throw_error)
 			json_ereport_error(result, lex);
 
-		return false;	/* invalid json */
+		return false;			/* invalid json */
 	}
 
 	if (check_unique_keys && !state.unique)
@@ -1737,10 +1712,10 @@ json_validate(text *json, bool check_unique_keys, bool throw_error)
 					(errcode(ERRCODE_DUPLICATE_JSON_OBJECT_KEY_VALUE),
 					 errmsg("duplicate JSON object key value")));
 
-		return false;	/* not unique keys */
+		return false;			/* not unique keys */
 	}
 
-	return true;	/* ok */
+	return true;				/* ok */
 }
 
 /*

@@ -1,3 +1,8 @@
+--
+-- Tests for database-specific role memberships.
+-- This is unsafe because roles and databases will added / removed / modified.
+--
+
 CREATE ROLE role_admin LOGIN SUPERUSER;
 
 \connect postgres role_admin

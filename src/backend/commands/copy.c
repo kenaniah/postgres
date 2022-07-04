@@ -318,7 +318,7 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
  * defGetBoolean() but also accepts the special value "match".
  */
 static CopyHeaderChoice
-defGetCopyHeaderChoice(DefElem *def)
+defGetCopyHeaderChoice(DefElem *def, bool is_from)
 {
 	/*
 	 * If no parameter given, assume "true" is meant.
@@ -345,7 +345,7 @@ defGetCopyHeaderChoice(DefElem *def)
 			break;
 		default:
 			{
-				char	*sval = defGetString(def);
+				char	   *sval = defGetString(def);
 
 				/*
 				 * The set of strings accepted here should match up with the
@@ -360,13 +360,20 @@ defGetCopyHeaderChoice(DefElem *def)
 				if (pg_strcasecmp(sval, "off") == 0)
 					return COPY_HEADER_FALSE;
 				if (pg_strcasecmp(sval, "match") == 0)
+				{
+					if (!is_from)
+						ereport(ERROR,
+								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								 errmsg("cannot use \"%s\" with HEADER in COPY TO",
+										sval)));
 					return COPY_HEADER_MATCH;
+				}
 			}
 			break;
 	}
 	ereport(ERROR,
-				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("%s requires a Boolean value or \"match\"",
+			(errcode(ERRCODE_SYNTAX_ERROR),
+			 errmsg("%s requires a Boolean value or \"match\"",
 					def->defname)));
 	return COPY_HEADER_FALSE;	/* keep compiler quiet */
 }
@@ -452,7 +459,7 @@ ProcessCopyOptions(ParseState *pstate,
 			if (header_specified)
 				errorConflictingDefElem(defel, pstate);
 			header_specified = true;
-			opts_out->header_line = defGetCopyHeaderChoice(defel);
+			opts_out->header_line = defGetCopyHeaderChoice(defel, is_from);
 		}
 		else if (strcmp(defel->defname, "quote") == 0)
 		{

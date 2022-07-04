@@ -647,7 +647,7 @@ errfinish(const char *filename, int lineno, const char *funcname)
 		fflush(stderr);
 
 		/*
-		 * Let the statistics collector know. Only mark the session as
+		 * Let the cumulative stats system know. Only mark the session as
 		 * terminated by fatal error if there is no other known cause.
 		 */
 		if (pgStatSessionEndCause == DISCONNECT_NORMAL)
@@ -1985,8 +1985,7 @@ set_syslog_parameters(const char *ident, int facility)
 			closelog();
 			openlog_done = false;
 		}
-		if (syslog_ident)
-			free(syslog_ident);
+		free(syslog_ident);
 		syslog_ident = strdup(ident);
 		/* if the strdup fails, we will cope in write_syslog() */
 		syslog_facility = facility;
@@ -2269,7 +2268,7 @@ write_console(const char *line, int len)
 	/*
 	 * Conversion on non-win32 platforms is not implemented yet. It requires
 	 * non-throw version of pg_do_encoding_conversion(), that converts
-	 * unconvertable characters to '?' without errors.
+	 * unconvertible characters to '?' without errors.
 	 *
 	 * XXX: We have a no-throw version now. It doesn't convert to '?' though.
 	 */
@@ -2683,7 +2682,6 @@ log_line_prefix(StringInfo buf, ErrorData *edata)
 						appendStringInfo(buf, "%*s", padding, psdisp);
 					else
 						appendBinaryStringInfo(buf, psdisp, displen);
-
 				}
 				else if (padding != 0)
 					appendStringInfoSpaces(buf,
@@ -2722,7 +2720,6 @@ log_line_prefix(StringInfo buf, ErrorData *edata)
 							appendStringInfo(buf, "(%s)",
 											 MyProcPort->remote_port);
 					}
-
 				}
 				else if (padding != 0)
 					appendStringInfoSpaces(buf,

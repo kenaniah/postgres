@@ -291,8 +291,7 @@ $node_subscriber->safe_psql('postgres',
 $node_subscriber->safe_psql('postgres',
 	"CREATE TABLE tab_rowfilter_viaroot_part (a int)");
 $node_subscriber->safe_psql('postgres',
-	"CREATE TABLE tab_rowfilter_viaroot_part_1 (a int)"
-);
+	"CREATE TABLE tab_rowfilter_viaroot_part_1 (a int)");
 
 # setup logical replication
 $node_publisher->safe_psql('postgres',
@@ -621,6 +620,11 @@ $node_subscriber->safe_psql('postgres',
 	"TRUNCATE TABLE tab_rowfilter_partitioned");
 $node_subscriber->safe_psql('postgres',
 	"ALTER SUBSCRIPTION tap_sub REFRESH PUBLICATION WITH (copy_data = true)");
+
+# wait for table synchronization to finish
+$node_subscriber->poll_query_until('postgres', $synced_query)
+  or die "Timed out while waiting for subscriber to synchronize data";
+
 $node_publisher->safe_psql('postgres',
 	"INSERT INTO tab_rowfilter_partitioned (a, b) VALUES(4000, 400),(4001, 401),(4002, 402)"
 );
@@ -720,18 +724,14 @@ is($result, qq(t|1), 'check replicated rows to tab_rowfilter_toast');
 $result =
   $node_subscriber->safe_psql('postgres',
 	"SELECT a FROM tab_rowfilter_viaroot_part");
-is( $result, qq(16),
-	'check replicated rows to tab_rowfilter_viaroot_part'
-);
+is($result, qq(16), 'check replicated rows to tab_rowfilter_viaroot_part');
 
 # Check there is no data in tab_rowfilter_viaroot_part_1 because rows are
 # replicated via the top most parent table tab_rowfilter_viaroot_part
 $result =
   $node_subscriber->safe_psql('postgres',
 	"SELECT a FROM tab_rowfilter_viaroot_part_1");
-is( $result, qq(),
-	'check replicated rows to tab_rowfilter_viaroot_part_1'
-);
+is($result, qq(), 'check replicated rows to tab_rowfilter_viaroot_part_1');
 
 # Testcase end: FOR TABLE with row filter publications
 # ======================================================

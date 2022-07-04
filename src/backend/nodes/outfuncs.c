@@ -124,11 +124,18 @@ static void outChar(StringInfo str, char c);
 			appendStringInfo(str, " %u", node->fldname[i]); \
 	} while(0)
 
+/*
+ * This macro supports the case that the field is NULL.  For the other array
+ * macros, that is currently not needed.
+ */
 #define WRITE_INDEX_ARRAY(fldname, len) \
 	do { \
 		appendStringInfoString(str, " :" CppAsString(fldname) " "); \
-		for (int i = 0; i < len; i++) \
-			appendStringInfo(str, " %u", node->fldname[i]); \
+		if (node->fldname) \
+			for (int i = 0; i < len; i++) \
+				appendStringInfo(str, " %u", node->fldname[i]); \
+		else \
+			appendStringInfoString(str, "<>"); \
 	} while(0)
 
 #define WRITE_INT_ARRAY(fldname, len) \
@@ -214,6 +221,8 @@ _outList(StringInfo str, const List *node)
 		appendStringInfoChar(str, 'i');
 	else if (IsA(node, OidList))
 		appendStringInfoChar(str, 'o');
+	else if (IsA(node, XidList))
+		appendStringInfoChar(str, 'x');
 
 	foreach(lc, node)
 	{
@@ -232,6 +241,8 @@ _outList(StringInfo str, const List *node)
 			appendStringInfo(str, " %d", lfirst_int(lc));
 		else if (IsA(node, OidList))
 			appendStringInfo(str, " %u", lfirst_oid(lc));
+		else if (IsA(node, XidList))
+			appendStringInfo(str, " %u", lfirst_xid(lc));
 		else
 			elog(ERROR, "unrecognized list node type: %d",
 				 (int) node->type);
@@ -638,6 +649,7 @@ _outSubqueryScan(StringInfo str, const SubqueryScan *node)
 	_outScanInfo(str, (const Scan *) node);
 
 	WRITE_NODE_FIELD(subplan);
+	WRITE_ENUM_FIELD(scanstatus, SubqueryScanStatus);
 }
 
 static void
@@ -828,11 +840,14 @@ _outWindowAgg(StringInfo str, const WindowAgg *node)
 	WRITE_INT_FIELD(frameOptions);
 	WRITE_NODE_FIELD(startOffset);
 	WRITE_NODE_FIELD(endOffset);
+	WRITE_NODE_FIELD(runCondition);
+	WRITE_NODE_FIELD(runConditionOrig);
 	WRITE_OID_FIELD(startInRangeFunc);
 	WRITE_OID_FIELD(endInRangeFunc);
 	WRITE_OID_FIELD(inRangeColl);
 	WRITE_BOOL_FIELD(inRangeAsc);
 	WRITE_BOOL_FIELD(inRangeNullsFirst);
+	WRITE_BOOL_FIELD(topWindow);
 }
 
 static void
@@ -1092,6 +1107,7 @@ _outTableFunc(StringInfo str, const TableFunc *node)
 {
 	WRITE_NODE_TYPE("TABLEFUNC");
 
+	WRITE_ENUM_FIELD(functype, TableFuncType);
 	WRITE_NODE_FIELD(ns_uris);
 	WRITE_NODE_FIELD(ns_names);
 	WRITE_NODE_FIELD(docexpr);
@@ -1102,7 +1118,9 @@ _outTableFunc(StringInfo str, const TableFunc *node)
 	WRITE_NODE_FIELD(colcollations);
 	WRITE_NODE_FIELD(colexprs);
 	WRITE_NODE_FIELD(coldefexprs);
+	WRITE_NODE_FIELD(colvalexprs);
 	WRITE_BITMAPSET_FIELD(notnulls);
+	WRITE_NODE_FIELD(plan);
 	WRITE_INT_FIELD(ordinalitycol);
 	WRITE_LOCATION_FIELD(location);
 }
@@ -1785,15 +1803,15 @@ _outJsonValueExpr(StringInfo str, const JsonValueExpr *node)
 static void
 _outJsonConstructorExpr(StringInfo str, const JsonConstructorExpr *node)
 {
-	WRITE_NODE_TYPE("JSONCTOREXPR");
+	WRITE_NODE_TYPE("JSONCONSTRUCTOREXPR");
 
+	WRITE_ENUM_FIELD(type, JsonConstructorType);
 	WRITE_NODE_FIELD(args);
 	WRITE_NODE_FIELD(func);
 	WRITE_NODE_FIELD(coercion);
-	WRITE_INT_FIELD(type);
 	WRITE_NODE_FIELD(returning);
-	WRITE_BOOL_FIELD(unique);
 	WRITE_BOOL_FIELD(absent_on_null);
+	WRITE_BOOL_FIELD(unique);
 	WRITE_LOCATION_FIELD(location);
 }
 
@@ -1803,7 +1821,8 @@ _outJsonIsPredicate(StringInfo str, const JsonIsPredicate *node)
 	WRITE_NODE_TYPE("JSONISPREDICATE");
 
 	WRITE_NODE_FIELD(expr);
-	WRITE_ENUM_FIELD(value_type, JsonValueType);
+	WRITE_NODE_FIELD(format);
+	WRITE_ENUM_FIELD(item_type, JsonValueType);
 	WRITE_BOOL_FIELD(unique_keys);
 	WRITE_LOCATION_FIELD(location);
 }
@@ -1827,11 +1846,11 @@ _outJsonExpr(StringInfo str, const JsonExpr *node)
 	WRITE_NODE_FIELD(result_coercion);
 	WRITE_NODE_FIELD(format);
 	WRITE_NODE_FIELD(path_spec);
-	WRITE_NODE_FIELD(passing_values);
 	WRITE_NODE_FIELD(passing_names);
+	WRITE_NODE_FIELD(passing_values);
 	WRITE_NODE_FIELD(returning);
-	WRITE_NODE_FIELD(on_error);
 	WRITE_NODE_FIELD(on_empty);
+	WRITE_NODE_FIELD(on_error);
 	WRITE_NODE_FIELD(coercions);
 	WRITE_ENUM_FIELD(wrapper, JsonWrapper);
 	WRITE_BOOL_FIELD(omit_quotes);
@@ -1864,6 +1883,30 @@ _outJsonItemCoercions(StringInfo str, const JsonItemCoercions *node)
 	WRITE_NODE_FIELD(timestamp);
 	WRITE_NODE_FIELD(timestamptz);
 	WRITE_NODE_FIELD(composite);
+}
+
+static void
+_outJsonTableParent(StringInfo str, const JsonTableParent *node)
+{
+	WRITE_NODE_TYPE("JSONTABLEPARENT");
+
+	WRITE_NODE_FIELD(path);
+	WRITE_STRING_FIELD(name);
+	WRITE_NODE_FIELD(child);
+	WRITE_BOOL_FIELD(outerJoin);
+	WRITE_INT_FIELD(colMin);
+	WRITE_INT_FIELD(colMax);
+	WRITE_BOOL_FIELD(errorOnError);
+}
+
+static void
+_outJsonTableSibling(StringInfo str, const JsonTableSibling *node)
+{
+	WRITE_NODE_TYPE("JSONTABLESIBLING");
+
+	WRITE_NODE_FIELD(larg);
+	WRITE_NODE_FIELD(rarg);
+	WRITE_BOOL_FIELD(cross);
 }
 
 /*****************************************************************************
@@ -2256,6 +2299,8 @@ _outWindowAggPath(StringInfo str, const WindowAggPath *node)
 
 	WRITE_NODE_FIELD(subpath);
 	WRITE_NODE_FIELD(winclause);
+	WRITE_NODE_FIELD(qual);
+	WRITE_BOOL_FIELD(topwindow);
 }
 
 static void
@@ -3266,6 +3311,7 @@ _outWindowClause(StringInfo str, const WindowClause *node)
 	WRITE_INT_FIELD(frameOptions);
 	WRITE_NODE_FIELD(startOffset);
 	WRITE_NODE_FIELD(endOffset);
+	WRITE_NODE_FIELD(runCondition);
 	WRITE_OID_FIELD(startInRangeFunc);
 	WRITE_OID_FIELD(endInRangeFunc);
 	WRITE_OID_FIELD(inRangeColl);
@@ -3573,8 +3619,8 @@ static void
 _outFloat(StringInfo str, const Float *node)
 {
 	/*
-	 * We assume the value is a valid numeric literal and so does not
-	 * need quoting.
+	 * We assume the value is a valid numeric literal and so does not need
+	 * quoting.
 	 */
 	appendStringInfoString(str, node->fval);
 }
@@ -3589,8 +3635,8 @@ static void
 _outString(StringInfo str, const String *node)
 {
 	/*
-	 * We use outToken to provide escaping of the string's content,
-	 * but we don't want it to do anything with an empty string.
+	 * We use outToken to provide escaping of the string's content, but we
+	 * don't want it to do anything with an empty string.
 	 */
 	appendStringInfoChar(str, '"');
 	if (node->sval[0] != '\0')
@@ -4713,6 +4759,12 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_JsonItemCoercions:
 				_outJsonItemCoercions(str, obj);
+				break;
+			case T_JsonTableParent:
+				_outJsonTableParent(str, obj);
+				break;
+			case T_JsonTableSibling:
+				_outJsonTableSibling(str, obj);
 				break;
 
 			default:

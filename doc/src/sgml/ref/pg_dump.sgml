@@ -372,8 +372,8 @@ PostgreSQL documentation
        <para>
         Requesting exclusive locks on database objects while running a parallel dump could
         cause the dump to fail. The reason is that the <application>pg_dump</application> leader process
-        requests shared locks on the objects that the worker processes are going to dump later
-        in order to
+        requests shared locks (<link linkend="locking-tables">ACCESS SHARE</link>) on the
+        objects that the worker processes are going to dump later in order to
         make sure that nobody deletes them and makes them go away while the dump is running.
         If another client then requests an exclusive lock on a table, that lock will not be
         granted but will be queued waiting for the shared lock of the leader process to be
@@ -981,9 +981,10 @@ PostgreSQL documentation
       <term><option>--no-unlogged-table-data</option></term>
       <listitem>
        <para>
-        Do not dump the contents of unlogged tables.  This option has no
-        effect on whether or not the table definitions (schema) are dumped;
-        it only suppresses dumping the table data. Data in unlogged tables
+        Do not dump the contents of unlogged tables and sequences.  This
+        option has no effect on whether or not the table and sequence
+        definitions (schema) are dumped; it only suppresses dumping the table
+        and sequence data. Data in unlogged tables and sequences
         is always excluded when dumping from a standby server.
        </para>
       </listitem>
@@ -1328,7 +1329,7 @@ PostgreSQL documentation
 
   <para>
    The database activity of <application>pg_dump</application> is
-   normally collected by the statistics collector.  If this is
+   normally collected by the cumulative statistics system.  If this is
    undesirable, you can set parameter <varname>track_counts</varname>
    to false via <envar>PGOPTIONS</envar> or the <literal>ALTER
    USER</literal> command.

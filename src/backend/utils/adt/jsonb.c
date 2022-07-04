@@ -851,7 +851,6 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 					sem.object_field_start = jsonb_in_object_field_start;
 
 					pg_parse_json_or_ereport(lex, &sem);
-
 				}
 				break;
 			case JSONBTYPE_JSONB:
@@ -1149,10 +1148,10 @@ to_jsonb_is_immutable(Oid typoid)
 			return false;
 
 		case JSONBTYPE_ARRAY:
-			return false;	/* TODO recurse into elements */
+			return false;		/* TODO recurse into elements */
 
 		case JSONBTYPE_COMPOSITE:
-			return false;	/* TODO recurse into fields */
+			return false;		/* TODO recurse into fields */
 
 		case JSONBTYPE_NUMERIC:
 		case JSONBTYPE_JSONCAST:
@@ -1241,6 +1240,7 @@ jsonb_build_object(PG_FUNCTION_ARGS)
 	Datum	   *args;
 	bool	   *nulls;
 	Oid		   *types;
+
 	/* build argument values to build the object */
 	int			nargs = extract_variadic_args(fcinfo, 0, true,
 											  &args, &types, &nulls);
@@ -1300,6 +1300,7 @@ jsonb_build_array(PG_FUNCTION_ARGS)
 	Datum	   *args;
 	bool	   *nulls;
 	Oid		   *types;
+
 	/* build argument values to build the object */
 	int			nargs = extract_variadic_args(fcinfo, 0, true,
 											  &args, &types, &nulls);
@@ -1377,9 +1378,7 @@ jsonb_object(PG_FUNCTION_ARGS)
 					 errmsg("wrong number of array subscripts")));
 	}
 
-	deconstruct_array(in_array,
-					  TEXTOID, -1, false, TYPALIGN_INT,
-					  &in_datums, &in_nulls, &in_count);
+	deconstruct_array_builtin(in_array, TEXTOID, &in_datums, &in_nulls, &in_count);
 
 	count = in_count / 2;
 
@@ -1465,13 +1464,8 @@ jsonb_object_two_arg(PG_FUNCTION_ARGS)
 	if (nkdims == 0)
 		goto close_object;
 
-	deconstruct_array(key_array,
-					  TEXTOID, -1, false, TYPALIGN_INT,
-					  &key_datums, &key_nulls, &key_count);
-
-	deconstruct_array(val_array,
-					  TEXTOID, -1, false, TYPALIGN_INT,
-					  &val_datums, &val_nulls, &val_count);
+	deconstruct_array_builtin(key_array, TEXTOID, &key_datums, &key_nulls, &key_count);
+	deconstruct_array_builtin(val_array, TEXTOID, &val_datums, &val_nulls, &val_count);
 
 	if (key_count != val_count)
 		ereport(ERROR,
@@ -2230,7 +2224,7 @@ jsonb_float8(PG_FUNCTION_ARGS)
 Jsonb *
 JsonbMakeEmptyArray(void)
 {
-	JsonbValue jbv;
+	JsonbValue	jbv;
 
 	jbv.type = jbvArray;
 	jbv.val.array.elems = NULL;
@@ -2246,7 +2240,7 @@ JsonbMakeEmptyArray(void)
 Jsonb *
 JsonbMakeEmptyObject(void)
 {
-	JsonbValue jbv;
+	JsonbValue	jbv;
 
 	jbv.type = jbvObject;
 	jbv.val.object.pairs = NULL;
@@ -2265,7 +2259,7 @@ JsonbUnquote(Jsonb *jb)
 	{
 		JsonbValue	v;
 
-		JsonbExtractScalar(&jb->root, &v);
+		(void) JsonbExtractScalar(&jb->root, &v);
 
 		if (v.type == jbvString)
 			return pnstrdup(v.val.string.val, v.val.string.len);
@@ -2273,7 +2267,7 @@ JsonbUnquote(Jsonb *jb)
 			return pstrdup(v.val.boolean ? "true" : "false");
 		else if (v.type == jbvNumeric)
 			return DatumGetCString(DirectFunctionCall1(numeric_out,
-									   PointerGetDatum(v.val.numeric)));
+													   PointerGetDatum(v.val.numeric)));
 		else if (v.type == jbvNull)
 			return pstrdup("null");
 		else

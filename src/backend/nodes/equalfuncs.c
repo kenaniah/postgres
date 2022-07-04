@@ -127,6 +127,7 @@ _equalRangeVar(const RangeVar *a, const RangeVar *b)
 static bool
 _equalTableFunc(const TableFunc *a, const TableFunc *b)
 {
+	COMPARE_SCALAR_FIELD(functype);
 	COMPARE_NODE_FIELD(ns_uris);
 	COMPARE_NODE_FIELD(ns_names);
 	COMPARE_NODE_FIELD(docexpr);
@@ -137,9 +138,65 @@ _equalTableFunc(const TableFunc *a, const TableFunc *b)
 	COMPARE_NODE_FIELD(colcollations);
 	COMPARE_NODE_FIELD(colexprs);
 	COMPARE_NODE_FIELD(coldefexprs);
+	COMPARE_NODE_FIELD(colvalexprs);
 	COMPARE_BITMAPSET_FIELD(notnulls);
+	COMPARE_NODE_FIELD(plan);
 	COMPARE_SCALAR_FIELD(ordinalitycol);
 	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalJsonTable(const JsonTable *a, const JsonTable *b)
+{
+	COMPARE_NODE_FIELD(common);
+	COMPARE_NODE_FIELD(columns);
+	COMPARE_NODE_FIELD(on_error);
+	COMPARE_NODE_FIELD(alias);
+	COMPARE_SCALAR_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalJsonTableColumn(const JsonTableColumn *a, const JsonTableColumn *b)
+{
+	COMPARE_SCALAR_FIELD(coltype);
+	COMPARE_STRING_FIELD(name);
+	COMPARE_NODE_FIELD(typeName);
+	COMPARE_STRING_FIELD(pathspec);
+	COMPARE_SCALAR_FIELD(format);
+	COMPARE_SCALAR_FIELD(wrapper);
+	COMPARE_SCALAR_FIELD(omit_quotes);
+	COMPARE_NODE_FIELD(columns);
+	COMPARE_NODE_FIELD(on_empty);
+	COMPARE_NODE_FIELD(on_error);
+	COMPARE_SCALAR_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalJsonTableParent(const JsonTableParent *a, const JsonTableParent *b)
+{
+	COMPARE_NODE_FIELD(path);
+	COMPARE_STRING_FIELD(name);
+	COMPARE_NODE_FIELD(child);
+	COMPARE_SCALAR_FIELD(outerJoin);
+	COMPARE_SCALAR_FIELD(colMin);
+	COMPARE_SCALAR_FIELD(colMax);
+	COMPARE_SCALAR_FIELD(errorOnError);
+
+	return true;
+}
+
+static bool
+_equalJsonTableSibling(const JsonTableSibling *a, const JsonTableSibling *b)
+{
+	COMPARE_NODE_FIELD(larg);
+	COMPARE_NODE_FIELD(rarg);
+	COMPARE_SCALAR_FIELD(cross);
 
 	return true;
 }
@@ -1048,7 +1105,8 @@ _equalJsonIsPredicate(const JsonIsPredicate *a,
 					  const JsonIsPredicate *b)
 {
 	COMPARE_NODE_FIELD(expr);
-	COMPARE_SCALAR_FIELD(value_type);
+	COMPARE_NODE_FIELD(format);
+	COMPARE_SCALAR_FIELD(item_type);
 	COMPARE_SCALAR_FIELD(unique_keys);
 	COMPARE_LOCATION_FIELD(location);
 
@@ -1078,11 +1136,11 @@ _equalJsonExpr(const JsonExpr *a, const JsonExpr *b)
 	COMPARE_NODE_FIELD(result_coercion);
 	COMPARE_NODE_FIELD(format);
 	COMPARE_NODE_FIELD(path_spec);
-	COMPARE_NODE_FIELD(passing_values);
 	COMPARE_NODE_FIELD(passing_names);
+	COMPARE_NODE_FIELD(passing_values);
 	COMPARE_NODE_FIELD(returning);
-	COMPARE_NODE_FIELD(on_error);
 	COMPARE_NODE_FIELD(on_empty);
+	COMPARE_NODE_FIELD(on_error);
 	COMPARE_NODE_FIELD(coercions);
 	COMPARE_SCALAR_FIELD(wrapper);
 	COMPARE_SCALAR_FIELD(omit_quotes);
@@ -2633,7 +2691,7 @@ _equalCreatePublicationStmt(const CreatePublicationStmt *a,
 	COMPARE_STRING_FIELD(pubname);
 	COMPARE_NODE_FIELD(options);
 	COMPARE_NODE_FIELD(pubobjects);
-	COMPARE_NODE_FIELD(for_all_objects);
+	COMPARE_SCALAR_FIELD(for_all_tables);
 
 	return true;
 }
@@ -2645,7 +2703,7 @@ _equalAlterPublicationStmt(const AlterPublicationStmt *a,
 	COMPARE_STRING_FIELD(pubname);
 	COMPARE_NODE_FIELD(options);
 	COMPARE_NODE_FIELD(pubobjects);
-	COMPARE_NODE_FIELD(for_all_objects);
+	COMPARE_SCALAR_FIELD(for_all_tables);
 	COMPARE_SCALAR_FIELD(action);
 
 	return true;
@@ -2747,8 +2805,7 @@ static bool
 _equalA_Const(const A_Const *a, const A_Const *b)
 {
 	/*
-	 * Hack for in-line val field.  Also val is not valid is isnull is
-	 * true.
+	 * Hack for in-line val field.  Also val is not valid is isnull is true.
 	 */
 	if (!a->isnull && !b->isnull &&
 		!equal(&a->val, &b->val))
@@ -3179,6 +3236,7 @@ _equalWindowClause(const WindowClause *a, const WindowClause *b)
 	COMPARE_SCALAR_FIELD(frameOptions);
 	COMPARE_NODE_FIELD(startOffset);
 	COMPARE_NODE_FIELD(endOffset);
+	COMPARE_NODE_FIELD(runCondition);
 	COMPARE_SCALAR_FIELD(startInRangeFunc);
 	COMPARE_SCALAR_FIELD(endInRangeFunc);
 	COMPARE_SCALAR_FIELD(inRangeColl);
@@ -3719,6 +3777,12 @@ equal(const void *a, const void *b)
 			break;
 		case T_JsonItemCoercions:
 			retval = _equalJsonItemCoercions(a, b);
+			break;
+		case T_JsonTableParent:
+			retval = _equalJsonTableParent(a, b);
+			break;
+		case T_JsonTableSibling:
+			retval = _equalJsonTableSibling(a, b);
 			break;
 
 			/*
@@ -4341,6 +4405,12 @@ equal(const void *a, const void *b)
 			break;
 		case T_JsonArgument:
 			retval = _equalJsonArgument(a, b);
+			break;
+		case T_JsonTable:
+			retval = _equalJsonTable(a, b);
+			break;
+		case T_JsonTableColumn:
+			retval = _equalJsonTableColumn(a, b);
 			break;
 
 		default:

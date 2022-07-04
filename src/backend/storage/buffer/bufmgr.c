@@ -649,6 +649,8 @@ ReadRecentBuffer(RelFileNode rnode, ForkNumber forkNum, BlockNumber blockNum,
 				pg_atomic_write_u32(&bufHdr->state,
 									buf_state + BUF_USAGECOUNT_ONE);
 
+			pgBufferUsage.local_blks_hit++;
+
 			return true;
 		}
 	}
@@ -671,14 +673,15 @@ ReadRecentBuffer(RelFileNode rnode, ForkNumber forkNum, BlockNumber blockNum,
 		{
 			/*
 			 * It's now safe to pin the buffer.  We can't pin first and ask
-			 * questions later, because it might confuse code paths
-			 * like InvalidateBuffer() if we pinned a random non-matching
-			 * buffer.
+			 * questions later, because it might confuse code paths like
+			 * InvalidateBuffer() if we pinned a random non-matching buffer.
 			 */
 			if (have_private_ref)
 				PinBuffer(bufHdr, NULL);	/* bump pin count */
 			else
 				PinBuffer_Locked(bufHdr);	/* pin for first time */
+
+			pgBufferUsage.shared_blks_hit++;
 
 			return true;
 		}
@@ -2151,7 +2154,7 @@ BufferSync(int flags)
 			if (SyncOneBuffer(buf_id, false, &wb_context) & BUF_WRITTEN)
 			{
 				TRACE_POSTGRESQL_BUFFER_SYNC_WRITTEN(buf_id);
-				PendingCheckpointerStats.m_buf_written_checkpoints++;
+				PendingCheckpointerStats.buf_written_checkpoints++;
 				num_written++;
 			}
 		}
@@ -2261,7 +2264,7 @@ BgBufferSync(WritebackContext *wb_context)
 	strategy_buf_id = StrategySyncStart(&strategy_passes, &recent_alloc);
 
 	/* Report buffer alloc counts to pgstat */
-	PendingBgWriterStats.m_buf_alloc += recent_alloc;
+	PendingBgWriterStats.buf_alloc += recent_alloc;
 
 	/*
 	 * If we're not running the LRU scan, just stop after doing the stats
@@ -2451,7 +2454,7 @@ BgBufferSync(WritebackContext *wb_context)
 			reusable_buffers++;
 			if (++num_written >= bgwriter_lru_maxpages)
 			{
-				PendingBgWriterStats.m_maxwritten_clean++;
+				PendingBgWriterStats.maxwritten_clean++;
 				break;
 			}
 		}
@@ -2459,7 +2462,7 @@ BgBufferSync(WritebackContext *wb_context)
 			reusable_buffers++;
 	}
 
-	PendingBgWriterStats.m_buf_written_clean += num_written;
+	PendingBgWriterStats.buf_written_clean += num_written;
 
 #ifdef BGW_DEBUG
 	elog(DEBUG1, "bgwriter: recent_alloc=%u smoothed=%.2f delta=%ld ahead=%d density=%.2f reusable_est=%d upcoming_est=%d scanned=%d wrote=%d reusable=%d",
@@ -2672,7 +2675,6 @@ CheckForBufferLeaks(void)
 			PrintBufferLeakWarning(res->buffer);
 			RefCountErrors++;
 		}
-
 	}
 
 	Assert(RefCountErrors == 0);
@@ -2942,10 +2944,10 @@ RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 	if (RELKIND_HAS_TABLE_AM(relation->rd_rel->relkind))
 	{
 		/*
-		 * Not every table AM uses BLCKSZ wide fixed size blocks.
-		 * Therefore tableam returns the size in bytes - but for the
-		 * purpose of this routine, we want the number of blocks.
-		 * Therefore divide, rounding up.
+		 * Not every table AM uses BLCKSZ wide fixed size blocks. Therefore
+		 * tableam returns the size in bytes - but for the purpose of this
+		 * routine, we want the number of blocks. Therefore divide, rounding
+		 * up.
 		 */
 		uint64		szbytes;
 
@@ -2955,7 +2957,7 @@ RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 	}
 	else if (RELKIND_HAS_STORAGE(relation->rd_rel->relkind))
 	{
-			return smgrnblocks(RelationGetSmgr(relation), forkNum);
+		return smgrnblocks(RelationGetSmgr(relation), forkNum);
 	}
 	else
 		Assert(false);
@@ -3648,7 +3650,6 @@ FlushRelationsAllBuffers(SMgrRelation *smgrs, int nrels)
 					break;
 				}
 			}
-
 		}
 		else
 		{
@@ -3705,9 +3706,9 @@ RelationCopyStorageUsingBuffer(Relation src, Relation dst, ForkNumber forkNum,
 	BufferAccessStrategy bstrategy_dst;
 
 	/*
-	 * In general, we want to write WAL whenever wal_level > 'minimal', but
-	 * we can skip it when copying any fork of an unlogged relation other
-	 * than the init fork.
+	 * In general, we want to write WAL whenever wal_level > 'minimal', but we
+	 * can skip it when copying any fork of an unlogged relation other than
+	 * the init fork.
 	 */
 	use_wal = XLogIsNeeded() && (permanent || forkNum == INIT_FORKNUM);
 
@@ -3777,9 +3778,9 @@ void
 CreateAndCopyRelationData(RelFileNode src_rnode, RelFileNode dst_rnode,
 						  bool permanent)
 {
-	Relation		src_rel;
-	Relation		dst_rel;
-	char			relpersistence;
+	Relation	src_rel;
+	Relation	dst_rel;
+	char		relpersistence;
 
 	/* Set the relpersistence. */
 	relpersistence = permanent ?
@@ -3787,9 +3788,9 @@ CreateAndCopyRelationData(RelFileNode src_rnode, RelFileNode dst_rnode,
 
 	/*
 	 * We can't use a real relcache entry for a relation in some other
-	 * database, but since we're only going to access the fields related
-	 * to physical storage, a fake one is good enough. If we didn't do this
-	 * and used the smgr layer directly, we would have to worry about
+	 * database, but since we're only going to access the fields related to
+	 * physical storage, a fake one is good enough. If we didn't do this and
+	 * used the smgr layer directly, we would have to worry about
 	 * invalidations.
 	 */
 	src_rel = CreateFakeRelcacheEntry(src_rnode);
@@ -4017,7 +4018,7 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 	{
 		XLogRecPtr	lsn = InvalidXLogRecPtr;
 		bool		dirtied = false;
-		bool		delayChkpt = false;
+		bool		delayChkptFlags = false;
 		uint32		buf_state;
 
 		/*
@@ -4067,9 +4068,9 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 			 * essential that CreateCheckPoint waits for virtual transactions
 			 * rather than full transactionids.
 			 */
-			Assert((MyProc->delayChkpt & DELAY_CHKPT_START) == 0);
-			MyProc->delayChkpt |= DELAY_CHKPT_START;
-			delayChkpt = true;
+			Assert((MyProc->delayChkptFlags & DELAY_CHKPT_START) == 0);
+			MyProc->delayChkptFlags |= DELAY_CHKPT_START;
+			delayChkptFlags = true;
 			lsn = XLogSaveBufferForHint(buffer, buffer_std);
 		}
 
@@ -4101,8 +4102,8 @@ MarkBufferDirtyHint(Buffer buffer, bool buffer_std)
 		buf_state |= BM_DIRTY | BM_JUST_DIRTIED;
 		UnlockBufHdr(bufHdr, buf_state);
 
-		if (delayChkpt)
-			MyProc->delayChkpt &= ~DELAY_CHKPT_START;
+		if (delayChkptFlags)
+			MyProc->delayChkptFlags &= ~DELAY_CHKPT_START;
 
 		if (dirtied)
 		{

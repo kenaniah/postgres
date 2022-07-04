@@ -93,7 +93,7 @@
  * ReorderBufferFinishPrepared.
  *
  * If the subscription has no tables then a two_phase tri-state PENDING is
- * left unchanged. This lets the user still do an ALTER TABLE REFRESH
+ * left unchanged. This lets the user still do an ALTER SUBSCRIPTION REFRESH
  * PUBLICATION which might otherwise be disallowed (see below).
  *
  * If ever a user needs to be aware of the tri-state value, they can fetch it
@@ -143,7 +143,6 @@
 #include "catalog/pg_subscription.h"
 #include "catalog/pg_subscription_rel.h"
 #include "catalog/pg_tablespace.h"
-#include "commands/sequence.h"
 #include "commands/tablecmds.h"
 #include "commands/tablespace.h"
 #include "commands/trigger.h"
@@ -252,7 +251,7 @@ static MemoryContext LogicalStreamingContext = NULL;
 WalReceiverConn *LogRepWorkerWalRcvConn = NULL;
 
 Subscription *MySubscription = NULL;
-bool		MySubscriptionValid = false;
+static bool MySubscriptionValid = false;
 
 bool		in_remote_transaction = false;
 static XLogRecPtr remote_final_lsn = InvalidXLogRecPtr;
@@ -601,7 +600,6 @@ slot_fill_defaults(LogicalRepRelMapEntry *rel, EState *estate,
 			defmap[num_defaults] = attnum;
 			num_defaults++;
 		}
-
 	}
 
 	for (i = 0; i < num_defaults; i++)
@@ -1145,57 +1143,6 @@ apply_handle_origin(StringInfo s)
 }
 
 /*
- * Handle SEQUENCE message.
- */
-static void
-apply_handle_sequence(StringInfo s)
-{
-	LogicalRepSequence	seq;
-	Oid					relid;
-
-	if (handle_streamed_transaction(LOGICAL_REP_MSG_SEQUENCE, s))
-		return;
-
-	logicalrep_read_sequence(s, &seq);
-
-	/*
-	 * Non-transactional sequence updates should not be part of a remote
-	 * transaction. There should not be any running transaction.
-	 */
-	Assert((!seq.transactional) || in_remote_transaction);
-	Assert(!(!seq.transactional && in_remote_transaction));
-	Assert(!(!seq.transactional && IsTransactionState()));
-
-	/*
-	 * Make sure we're in a transaction (needed by SetSequence). For
-	 * non-transactional updates we're guaranteed to start a new one,
-	 * and we'll commit it at the end.
-	 */
-	if (!IsTransactionState())
-	{
-		StartTransactionCommand();
-		maybe_reread_subscription();
-	}
-
-	relid = RangeVarGetRelid(makeRangeVar(seq.nspname,
-										  seq.seqname, -1),
-							 RowExclusiveLock, false);
-
-	/* lock the sequence in AccessExclusiveLock, as expected by SetSequence */
-	LockRelationOid(relid, AccessExclusiveLock);
-
-	/* apply the sequence change */
-	SetSequence(relid, seq.transactional, seq.last_value, seq.log_cnt, seq.is_called);
-
-	/*
-	 * Commit the per-stream transaction (we only do this when not in
-	 * remote transaction, i.e. for non-transactional sequence updates.
-	 */
-	if (!in_remote_transaction)
-		CommitTransactionCommand();
-}
-
-/*
  * Handle STREAM START message.
  */
 static void
@@ -1615,6 +1562,9 @@ apply_handle_relation(StringInfo s)
 
 	rel = logicalrep_read_rel(s);
 	logicalrep_relmap_update(rel);
+
+	/* Also reset all entries in the partition map that refer to remoterel. */
+	logicalrep_partmap_reset_relmap(rel);
 }
 
 /*
@@ -1661,8 +1611,8 @@ GetRelationIdentityOrPK(Relation rel)
 static void
 TargetPrivilegesCheck(Relation rel, AclMode mode)
 {
-	Oid				relid;
-	AclResult		aclresult;
+	Oid			relid;
+	AclResult	aclresult;
 
 	relid = RelationGetRelid(rel);
 	aclresult = pg_class_aclcheck(relid, GetUserId(), mode);
@@ -1788,6 +1738,13 @@ apply_handle_insert_internal(ApplyExecutionData *edata,
 static void
 check_relation_updatable(LogicalRepRelMapEntry *rel)
 {
+	/*
+	 * For partitioned tables, we only need to care if the target partition is
+	 * updatable (aka has PK or RI defined for it).
+	 */
+	if (rel->localrel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		return;
+
 	/* Updatable, no error. */
 	if (rel->updatable)
 		return;
@@ -2171,6 +2128,8 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 	TupleTableSlot *remoteslot_part;
 	TupleConversionMap *map;
 	MemoryContext oldctx;
+	LogicalRepRelMapEntry *part_entry = NULL;
+	AttrMap    *attrmap = NULL;
 
 	/* ModifyTableState is needed for ExecFindPartition(). */
 	edata->mtstate = mtstate = makeNode(ModifyTableState);
@@ -2202,14 +2161,25 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 		remoteslot_part = table_slot_create(partrel, &estate->es_tupleTable);
 	map = partrelinfo->ri_RootToPartitionMap;
 	if (map != NULL)
-		remoteslot_part = execute_attr_map_slot(map->attrMap, remoteslot,
+	{
+		attrmap = map->attrMap;
+		remoteslot_part = execute_attr_map_slot(attrmap, remoteslot,
 												remoteslot_part);
+	}
 	else
 	{
 		remoteslot_part = ExecCopySlot(remoteslot_part, remoteslot);
 		slot_getallattrs(remoteslot_part);
 	}
 	MemoryContextSwitchTo(oldctx);
+
+	/* Check if we can do the update or delete on the leaf partition. */
+	if (operation == CMD_UPDATE || operation == CMD_DELETE)
+	{
+		part_entry = logicalrep_partition_open(relmapentry, partrel,
+											   attrmap);
+		check_relation_updatable(part_entry);
+	}
 
 	switch (operation)
 	{
@@ -2232,14 +2202,9 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 			 * suitable partition.
 			 */
 			{
-				AttrMap    *attrmap = map ? map->attrMap : NULL;
-				LogicalRepRelMapEntry *part_entry;
 				TupleTableSlot *localslot;
 				ResultRelInfo *partrelinfo_new;
 				bool		found;
-
-				part_entry = logicalrep_partition_open(relmapentry, partrel,
-													   attrmap);
 
 				/* Get the matching local tuple from the partition. */
 				found = FindReplTupleInLocalRel(estate, partrel,
@@ -2562,10 +2527,6 @@ apply_dispatch(StringInfo s)
 			 * output plugin.
 			 */
 			break;
-
-		case LOGICAL_REP_MSG_SEQUENCE:
-			apply_handle_sequence(s);
-			return;
 
 		case LOGICAL_REP_MSG_STREAM_START:
 			apply_handle_stream_start(s);
@@ -2937,6 +2898,17 @@ LogicalRepApplyLoop(XLogRecPtr last_received)
 			}
 
 			send_feedback(last_received, requestReply, requestReply);
+
+			/*
+			 * Force reporting to ensure long idle periods don't lead to
+			 * arbitrarily delayed stats. Stats can only be reported outside
+			 * of (implicit or explicit) transactions. That shouldn't lead to
+			 * stats being delayed for long, because transactions are either
+			 * sent as a whole on commit or streamed. Streamed transactions
+			 * are spilled to disk and applied on commit.
+			 */
+			if (!IsTransactionState())
+				pgstat_report_stat(true);
 		}
 	}
 

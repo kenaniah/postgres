@@ -232,7 +232,7 @@ HandleSlashCmds(PsqlScanState scan_state,
 	{
 		pg_log_error("invalid command \\%s", cmd);
 		if (pset.cur_cmd_interactive)
-			pg_log_info("Try \\? for help.");
+			pg_log_error_hint("Try \\? for help.");
 		status = PSQL_CMD_ERROR;
 	}
 
@@ -595,8 +595,7 @@ exec_command_cd(PsqlScanState scan_state, bool active_branch, const char *cmd)
 			success = false;
 		}
 
-		if (opt)
-			free(opt);
+		free(opt);
 	}
 	else
 		ignore_slash_options(scan_state);
@@ -769,8 +768,7 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 							break;
 					}
 
-					if (pattern2)
-						free(pattern2);
+					free(pattern2);
 				}
 				break;
 			case 'a':
@@ -780,7 +778,14 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 				success = describeTablespaces(pattern, show_verbose);
 				break;
 			case 'c':
-				success = listConversions(pattern, show_verbose, show_system);
+				if (strncmp(cmd, "dconfig", 7) == 0)
+					success = describeConfigurationParameters(pattern,
+															  show_verbose,
+															  show_system);
+				else
+					success = listConversions(pattern,
+											  show_verbose,
+											  show_system);
 				break;
 			case 'C':
 				success = listCasts(pattern, show_verbose);
@@ -874,8 +879,7 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 														  OT_NORMAL, NULL, true);
 					success = listDbRoleSettings(pattern, pattern2);
 
-					if (pattern2)
-						free(pattern2);
+					free(pattern2);
 				}
 				else
 					status = PSQL_CMD_UNKNOWN;
@@ -956,8 +960,7 @@ exec_command_d(PsqlScanState scan_state, bool active_branch, const char *cmd)
 				status = PSQL_CMD_UNKNOWN;
 		}
 
-		if (pattern)
-			free(pattern);
+		free(pattern);
 	}
 	else
 		ignore_slash_options(scan_state);
@@ -1085,10 +1088,8 @@ exec_command_edit(PsqlScanState scan_state, bool active_branch,
 				else
 					status = PSQL_CMD_ERROR;
 			}
-			if (fname)
-				free(fname);
-			if (ln)
-				free(ln);
+			free(fname);
+			free(ln);
 		}
 	}
 	else
@@ -1197,8 +1198,7 @@ exec_command_ef_ev(PsqlScanState scan_state, bool active_branch,
 				status = PSQL_CMD_NEWEDIT;
 		}
 
-		if (obj_desc)
-			free(obj_desc);
+		free(obj_desc);
 	}
 	else
 		ignore_slash_whole_line(scan_state);
@@ -1913,8 +1913,7 @@ exec_command_list(PsqlScanState scan_state, bool active_branch, const char *cmd)
 
 		success = listAllDbs(pattern, show_verbose);
 
-		if (pattern)
-			free(pattern);
+		free(pattern);
 	}
 	else
 		ignore_slash_options(scan_state);
@@ -2129,10 +2128,8 @@ exec_command_password(PsqlScanState scan_state, bool active_branch)
 		}
 
 		free(user);
-		if (pw1)
-			free(pw1);
-		if (pw2)
-			free(pw2);
+		free(pw1);
+		free(pw2);
 		termPQExpBuffer(&buf);
 	}
 	else
@@ -2207,10 +2204,8 @@ exec_command_prompt(PsqlScanState scan_state, bool active_branch,
 				(result && !SetVariable(pset.vars, opt, result)))
 				success = false;
 
-			if (result)
-				free(result);
-			if (prompt_text)
-				free(prompt_text);
+			free(result);
+			free(prompt_text);
 			free(opt);
 		}
 	}
@@ -2515,8 +2510,7 @@ exec_command_sf_sv(PsqlScanState scan_state, bool active_branch,
 				ClosePager(output);
 		}
 
-		if (obj_desc)
-			free(obj_desc);
+		free(obj_desc);
 		destroyPQExpBuffer(buf);
 	}
 	else
@@ -2795,8 +2789,7 @@ exec_command_z(PsqlScanState scan_state, bool active_branch)
 													 OT_NORMAL, NULL, true);
 
 		success = permissionsList(pattern);
-		if (pattern)
-			free(pattern);
+		free(pattern);
 	}
 	else
 		ignore_slash_options(scan_state);
@@ -2846,8 +2839,7 @@ exec_command_slash_command_help(PsqlScanState scan_state, bool active_branch)
 		else
 			slashUsage(pset.popt.topt.pager);
 
-		if (opt0)
-			free(opt0);
+		free(opt0);
 	}
 	else
 		ignore_slash_options(scan_state);
@@ -2987,8 +2979,7 @@ ignore_slash_filepipe(PsqlScanState scan_state)
 	char	   *arg = psql_scan_slash_option(scan_state,
 											 OT_FILEPIPE, NULL, false);
 
-	if (arg)
-		free(arg);
+	free(arg);
 }
 
 /*
@@ -3004,8 +2995,7 @@ ignore_slash_whole_line(PsqlScanState scan_state)
 	char	   *arg = psql_scan_slash_option(scan_state,
 											 OT_WHOLE_LINE, NULL, false);
 
-	if (arg)
-		free(arg);
+	free(arg);
 }
 
 /*
@@ -3485,10 +3475,8 @@ do_connect(enum trivalue reuse_previous_specification,
 	}							/* end retry loop */
 
 	/* Release locally allocated data, whether we succeeded or not */
-	if (password)
-		pg_free(password);
-	if (cinfo)
-		PQconninfoFree(cinfo);
+	pg_free(password);
+	PQconninfoFree(cinfo);
 
 	if (!success)
 	{
@@ -4773,16 +4761,11 @@ restorePsetInfo(printQueryOpt *popt, printQueryOpt *save)
 	/* Free all the old data we're about to overwrite the pointers to. */
 
 	/* topt.line_style points to const data that need not be duplicated */
-	if (popt->topt.fieldSep.separator)
-		free(popt->topt.fieldSep.separator);
-	if (popt->topt.recordSep.separator)
-		free(popt->topt.recordSep.separator);
-	if (popt->topt.tableAttr)
-		free(popt->topt.tableAttr);
-	if (popt->nullPrint)
-		free(popt->nullPrint);
-	if (popt->title)
-		free(popt->title);
+	free(popt->topt.fieldSep.separator);
+	free(popt->topt.recordSep.separator);
+	free(popt->topt.tableAttr);
+	free(popt->nullPrint);
+	free(popt->title);
 
 	/*
 	 * footers and translate_columns are never set in psql's print settings,

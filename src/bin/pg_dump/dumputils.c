@@ -37,7 +37,7 @@ static void AddAcl(PQExpBuffer aclbuf, const char *keyword,
  *	nspname: the namespace the object is in (NULL if none); not pre-quoted
  *	type: the object type (as seen in GRANT command: must be one of
  *		TABLE, SEQUENCE, FUNCTION, PROCEDURE, LANGUAGE, SCHEMA, DATABASE, TABLESPACE,
- *		FOREIGN DATA WRAPPER, SERVER, or LARGE OBJECT)
+ *		FOREIGN DATA WRAPPER, SERVER, PARAMETER or LARGE OBJECT)
  *	acls: the ACL string fetched from the database
  *	baseacls: the initial ACL string for this object
  *	owner: username of object owner (will be passed through fmtId); can be
@@ -98,18 +98,15 @@ buildACLCommands(const char *name, const char *subname, const char *nspname,
 	/* Parse the acls array */
 	if (!parsePGArray(acls, &aclitems, &naclitems))
 	{
-		if (aclitems)
-			free(aclitems);
+		free(aclitems);
 		return false;
 	}
 
 	/* Parse the baseacls too */
 	if (!parsePGArray(baseacls, &baseitems, &nbaseitems))
 	{
-		if (aclitems)
-			free(aclitems);
-		if (baseitems)
-			free(baseitems);
+		free(aclitems);
+		free(baseitems);
 		return false;
 	}
 
@@ -298,14 +295,10 @@ buildACLCommands(const char *name, const char *subname, const char *nspname,
 	destroyPQExpBuffer(firstsql);
 	destroyPQExpBuffer(secondsql);
 
-	if (aclitems)
-		free(aclitems);
-	if (baseitems)
-		free(baseitems);
-	if (grantitems)
-		free(grantitems);
-	if (revokeitems)
-		free(revokeitems);
+	free(aclitems);
+	free(baseitems);
+	free(grantitems);
+	free(revokeitems);
 
 	return ok;
 }
@@ -501,6 +494,11 @@ do { \
 		CONVERT_PRIV('U', "USAGE");
 	else if (strcmp(type, "FOREIGN TABLE") == 0)
 		CONVERT_PRIV('r', "SELECT");
+	else if (strcmp(type, "PARAMETER") == 0)
+	{
+		CONVERT_PRIV('s', "SET");
+		CONVERT_PRIV('A', "ALTER SYSTEM");
+	}
 	else if (strcmp(type, "LARGE OBJECT") == 0)
 	{
 		CONVERT_PRIV('r', "SELECT");

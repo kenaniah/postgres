@@ -1003,7 +1003,7 @@ exprCollation(const Node *expr)
 			break;
 		case T_JsonExpr:
 			{
-				JsonExpr *jexpr = (JsonExpr *) expr;
+				JsonExpr   *jexpr = (JsonExpr *) expr;
 				JsonCoercion *coercion = jexpr->result_coercion;
 
 				if (!coercion)
@@ -1239,7 +1239,8 @@ exprSetCollation(Node *expr, Oid collation)
 				if (ctor->coercion)
 					exprSetCollation((Node *) ctor->coercion, collation);
 				else
-					Assert(!OidIsValid(collation)); /* result is always a json[b] type */
+					Assert(!OidIsValid(collation)); /* result is always a
+													 * json[b] type */
 			}
 			break;
 		case T_JsonIsPredicate:
@@ -1247,7 +1248,7 @@ exprSetCollation(Node *expr, Oid collation)
 			break;
 		case T_JsonExpr:
 			{
-				JsonExpr *jexpr = (JsonExpr *) expr;
+				JsonExpr   *jexpr = (JsonExpr *) expr;
 				JsonCoercion *coercion = jexpr->result_coercion;
 
 				if (!coercion)
@@ -2466,6 +2467,8 @@ expression_tree_walker(Node *node,
 					return true;
 				if (walker(tf->coldefexprs, context))
 					return true;
+				if (walker(tf->colvalexprs, context))
+					return true;
 			}
 			break;
 		case T_JsonValueExpr:
@@ -2494,7 +2497,7 @@ expression_tree_walker(Node *node,
 			return walker(((JsonIsPredicate *) node)->expr, context);
 		case T_JsonExpr:
 			{
-				JsonExpr    *jexpr = (JsonExpr *) node;
+				JsonExpr   *jexpr = (JsonExpr *) node;
 
 				if (walker(jexpr->formatted_expr, context))
 					return true;
@@ -2820,11 +2823,6 @@ expression_tree_mutator(Node *node,
 
 #define FLATCOPY(newnode, node, nodetype)  \
 	( (newnode) = (nodetype *) palloc(sizeof(nodetype)), \
-	  memcpy((newnode), (node), sizeof(nodetype)) )
-
-#define CHECKFLATCOPY(newnode, node, nodetype)	\
-	( AssertMacro(IsA((node), nodetype)), \
-	  (newnode) = (nodetype *) palloc(sizeof(nodetype)), \
 	  memcpy((newnode), (node), sizeof(nodetype)) )
 
 #define MUTATE(newfield, oldfield, fieldtype)  \
@@ -3513,6 +3511,7 @@ expression_tree_mutator(Node *node,
 				MUTATE(newnode->rowexpr, tf->rowexpr, Node *);
 				MUTATE(newnode->colexprs, tf->colexprs, List *);
 				MUTATE(newnode->coldefexprs, tf->coldefexprs, List *);
+				MUTATE(newnode->colvalexprs, tf->colvalexprs, List *);
 				return (Node *) newnode;
 			}
 			break;
@@ -3565,8 +3564,8 @@ expression_tree_mutator(Node *node,
 			break;
 		case T_JsonExpr:
 			{
-				JsonExpr    *jexpr = (JsonExpr *) node;
-				JsonExpr    *newnode;
+				JsonExpr   *jexpr = (JsonExpr *) node;
+				JsonExpr   *newnode;
 
 				FLATCOPY(newnode, jexpr, JsonExpr);
 				MUTATE(newnode->path_spec, jexpr->path_spec, Node *);
@@ -3636,9 +3635,9 @@ expression_tree_mutator(Node *node,
  * which is the bitwise OR of flag values to suppress mutating of
  * indicated items.  (More flag bits may be added as needed.)
  *
- * Normally the Query node itself is copied, but some callers want it to be
- * modified in-place; they must pass QTW_DONT_COPY_QUERY in flags.  All
- * modified substructure is safely copied in any case.
+ * Normally the top-level Query node itself is copied, but some callers want
+ * it to be modified in-place; they must pass QTW_DONT_COPY_QUERY in flags.
+ * All modified substructure is safely copied in any case.
  */
 Query *
 query_tree_mutator(Query *query,
@@ -3754,10 +3753,7 @@ range_table_mutator(List *rtable,
 				break;
 			case RTE_SUBQUERY:
 				if (!(flags & QTW_IGNORE_RT_SUBQUERIES))
-				{
-					CHECKFLATCOPY(newrte->subquery, rte->subquery, Query);
-					MUTATE(newrte->subquery, newrte->subquery, Query *);
-				}
+					MUTATE(newrte->subquery, rte->subquery, Query *);
 				else
 				{
 					/* else, copy RT subqueries as-is */
@@ -4527,6 +4523,30 @@ raw_expression_tree_walker(Node *node,
 				if (walker(jfe->on_empty, context))
 					return true;
 				if (walker(jfe->on_error, context))
+					return true;
+			}
+			break;
+		case T_JsonTable:
+			{
+				JsonTable  *jt = (JsonTable *) node;
+
+				if (walker(jt->common, context))
+					return true;
+				if (walker(jt->columns, context))
+					return true;
+			}
+			break;
+		case T_JsonTableColumn:
+			{
+				JsonTableColumn *jtc = (JsonTableColumn *) node;
+
+				if (walker(jtc->typeName, context))
+					return true;
+				if (walker(jtc->on_empty, context))
+					return true;
+				if (walker(jtc->on_error, context))
+					return true;
+				if (jtc->coltype == JTC_NESTED && walker(jtc->columns, context))
 					return true;
 			}
 			break;

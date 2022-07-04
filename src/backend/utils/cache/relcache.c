@@ -56,7 +56,6 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_publication.h"
-#include "catalog/pg_publication_namespace.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_shseclabel.h"
 #include "catalog/pg_statistic_ext.h"
@@ -73,6 +72,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
+#include "pgstat.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rowsecurity.h"
 #include "storage/lmgr.h"
@@ -2409,6 +2409,9 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 	 */
 	RelationCloseSmgr(relation);
 
+	/* break mutual link with stats entry */
+	pgstat_unlink_relation(relation);
+
 	/*
 	 * Free all the subsidiary data structures of the relcache entry, then the
 	 * entry itself.
@@ -2436,10 +2439,10 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 	list_free_deep(relation->rd_fkeylist);
 	list_free(relation->rd_indexlist);
 	list_free(relation->rd_statlist);
+	bms_free(relation->rd_indexattr);
 	bms_free(relation->rd_keyattr);
 	bms_free(relation->rd_pkattr);
 	bms_free(relation->rd_idattr);
-	bms_free(relation->rd_hotblockingattr);
 	if (relation->rd_pubdesc)
 		pfree(relation->rd_pubdesc);
 	if (relation->rd_options)
@@ -2716,8 +2719,9 @@ RelationClearRelation(Relation relation, bool rebuild)
 			SWAPFIELD(RowSecurityDesc *, rd_rsdesc);
 		/* toast OID override must be preserved */
 		SWAPFIELD(Oid, rd_toastoid);
-		/* pgstat_info must be preserved */
+		/* pgstat_info / enabled must be preserved */
 		SWAPFIELD(struct PgStat_TableStatus *, pgstat_info);
+		SWAPFIELD(bool, pgstat_enabled);
 		/* preserve old partition key if we have one */
 		if (keep_partkey)
 		{
@@ -5100,10 +5104,10 @@ RelationGetIndexPredicate(Relation relation)
 Bitmapset *
 RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 {
+	Bitmapset  *indexattrs;		/* indexed columns */
 	Bitmapset  *uindexattrs;	/* columns in unique indexes */
 	Bitmapset  *pkindexattrs;	/* columns in the primary index */
 	Bitmapset  *idindexattrs;	/* columns in the replica identity */
-	Bitmapset  *hotblockingattrs;   /* columns with HOT blocking indexes */
 	List	   *indexoidlist;
 	List	   *newindexoidlist;
 	Oid			relpkindex;
@@ -5112,18 +5116,18 @@ RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 	MemoryContext oldcxt;
 
 	/* Quick exit if we already computed the result. */
-	if (relation->rd_attrsvalid)
+	if (relation->rd_indexattr != NULL)
 	{
 		switch (attrKind)
 		{
+			case INDEX_ATTR_BITMAP_ALL:
+				return bms_copy(relation->rd_indexattr);
 			case INDEX_ATTR_BITMAP_KEY:
 				return bms_copy(relation->rd_keyattr);
 			case INDEX_ATTR_BITMAP_PRIMARY_KEY:
 				return bms_copy(relation->rd_pkattr);
 			case INDEX_ATTR_BITMAP_IDENTITY_KEY:
 				return bms_copy(relation->rd_idattr);
-			case INDEX_ATTR_BITMAP_HOT_BLOCKING:
-				return bms_copy(relation->rd_hotblockingattr);
 			default:
 				elog(ERROR, "unknown attrKind %u", attrKind);
 		}
@@ -5154,7 +5158,7 @@ restart:
 	relreplindex = relation->rd_replidindex;
 
 	/*
-	 * For each index, add referenced attributes to appropriate bitmaps.
+	 * For each index, add referenced attributes to indexattrs.
 	 *
 	 * Note: we consider all indexes returned by RelationGetIndexList, even if
 	 * they are not indisready or indisvalid.  This is important because an
@@ -5163,10 +5167,10 @@ restart:
 	 * CONCURRENTLY is far enough along that we should ignore the index, it
 	 * won't be returned at all by RelationGetIndexList.
 	 */
+	indexattrs = NULL;
 	uindexattrs = NULL;
 	pkindexattrs = NULL;
 	idindexattrs = NULL;
-	hotblockingattrs = NULL;
 	foreach(l, indexoidlist)
 	{
 		Oid			indexOid = lfirst_oid(l);
@@ -5231,9 +5235,8 @@ restart:
 			 */
 			if (attrnum != 0)
 			{
-				if (indexDesc->rd_indam->amhotblocking)
-					hotblockingattrs = bms_add_member(hotblockingattrs,
-												 attrnum - FirstLowInvalidHeapAttributeNumber);
+				indexattrs = bms_add_member(indexattrs,
+											attrnum - FirstLowInvalidHeapAttributeNumber);
 
 				if (isKey && i < indexDesc->rd_index->indnkeyatts)
 					uindexattrs = bms_add_member(uindexattrs,
@@ -5250,15 +5253,10 @@ restart:
 		}
 
 		/* Collect all attributes used in expressions, too */
-		if (indexDesc->rd_indam->amhotblocking)
-			pull_varattnos(indexExpressions, 1, &hotblockingattrs);
+		pull_varattnos(indexExpressions, 1, &indexattrs);
 
-		/*
-		 * Collect all attributes in the index predicate, too. We have to ignore
-		 * amhotblocking flag, because the row might become indexable, in which
-		 * case we have to add it to the index.
-		 */
-		pull_varattnos(indexPredicate, 1, &hotblockingattrs);
+		/* Collect all attributes in the index predicate, too */
+		pull_varattnos(indexPredicate, 1, &indexattrs);
 
 		index_close(indexDesc, AccessShareLock);
 	}
@@ -5286,25 +5284,25 @@ restart:
 		bms_free(uindexattrs);
 		bms_free(pkindexattrs);
 		bms_free(idindexattrs);
-		bms_free(hotblockingattrs);
+		bms_free(indexattrs);
 
 		goto restart;
 	}
 
 	/* Don't leak the old values of these bitmaps, if any */
+	bms_free(relation->rd_indexattr);
+	relation->rd_indexattr = NULL;
 	bms_free(relation->rd_keyattr);
 	relation->rd_keyattr = NULL;
 	bms_free(relation->rd_pkattr);
 	relation->rd_pkattr = NULL;
 	bms_free(relation->rd_idattr);
 	relation->rd_idattr = NULL;
-	bms_free(relation->rd_hotblockingattr);
-	relation->rd_hotblockingattr = NULL;
 
 	/*
 	 * Now save copies of the bitmaps in the relcache entry.  We intentionally
-	 * set rd_attrsvalid last, because that's what signals validity of the
-	 * values; if we run out of memory before making that copy, we won't
+	 * set rd_indexattr last, because that's the one that signals validity of
+	 * the values; if we run out of memory before making that copy, we won't
 	 * leave the relcache entry looking like the other ones are valid but
 	 * empty.
 	 */
@@ -5312,21 +5310,20 @@ restart:
 	relation->rd_keyattr = bms_copy(uindexattrs);
 	relation->rd_pkattr = bms_copy(pkindexattrs);
 	relation->rd_idattr = bms_copy(idindexattrs);
-	relation->rd_hotblockingattr = bms_copy(hotblockingattrs);
-	relation->rd_attrsvalid = true;
+	relation->rd_indexattr = bms_copy(indexattrs);
 	MemoryContextSwitchTo(oldcxt);
 
 	/* We return our original working copy for caller to play with */
 	switch (attrKind)
 	{
+		case INDEX_ATTR_BITMAP_ALL:
+			return indexattrs;
 		case INDEX_ATTR_BITMAP_KEY:
 			return uindexattrs;
 		case INDEX_ATTR_BITMAP_PRIMARY_KEY:
 			return pkindexattrs;
 		case INDEX_ATTR_BITMAP_IDENTITY_KEY:
 			return idindexattrs;
-		case INDEX_ATTR_BITMAP_HOT_BLOCKING:
-			return hotblockingattrs;
 		default:
 			elog(ERROR, "unknown attrKind %u", attrKind);
 			return NULL;
@@ -5563,8 +5560,6 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 	Oid			schemaid;
 	List	   *ancestors = NIL;
 	Oid			relid = RelationGetRelid(relation);
-	char		relkind = relation->rd_rel->relkind;
-	char		objType;
 
 	/*
 	 * If not publishable, it publishes no actions.  (pgoutput_change() will
@@ -5595,15 +5590,8 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 	/* Fetch the publication membership info. */
 	puboids = GetRelationPublications(relid);
 	schemaid = RelationGetNamespace(relation);
-	objType = pub_get_object_type_for_relkind(relkind);
+	puboids = list_concat_unique_oid(puboids, GetSchemaPublications(schemaid));
 
-	puboids = list_concat_unique_oid(puboids,
-									 GetSchemaPublications(schemaid, objType));
-
-	/*
-	 * If this is a partion (and thus a table), lookup all ancestors and track
-	 * all publications them too.
-	 */
 	if (relation->rd_rel->relispartition)
 	{
 		/* Add publications that the ancestors are in too. */
@@ -5615,23 +5603,12 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 
 			puboids = list_concat_unique_oid(puboids,
 											 GetRelationPublications(ancestor));
-
-			/* include all publications publishing schema of all ancestors */
 			schemaid = get_rel_namespace(ancestor);
 			puboids = list_concat_unique_oid(puboids,
-											 GetSchemaPublications(schemaid,
-																   PUB_OBJTYPE_TABLE));
+											 GetSchemaPublications(schemaid));
 		}
 	}
-
-	/*
-	 * Consider also FOR ALL TABLES and FOR ALL SEQUENCES publications,
-	 * depending on the relkind of the relation.
-	 */
-	if (relation->rd_rel->relkind == RELKIND_SEQUENCE)
-		puboids = list_concat_unique_oid(puboids, GetAllSequencesPublications());
-	else
-		puboids = list_concat_unique_oid(puboids, GetAllTablesPublications());
+	puboids = list_concat_unique_oid(puboids, GetAllTablesPublications());
 
 	foreach(lc, puboids)
 	{
@@ -5650,11 +5627,10 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 		pubdesc->pubactions.pubupdate |= pubform->pubupdate;
 		pubdesc->pubactions.pubdelete |= pubform->pubdelete;
 		pubdesc->pubactions.pubtruncate |= pubform->pubtruncate;
-		pubdesc->pubactions.pubsequence |= pubform->pubsequence;
 
 		/*
-		 * Check if all columns referenced in the filter expression are part of
-		 * the REPLICA IDENTITY index or not.
+		 * Check if all columns referenced in the filter expression are part
+		 * of the REPLICA IDENTITY index or not.
 		 *
 		 * If the publication is FOR ALL TABLES then it means the table has no
 		 * row filters and we can skip the validation.
@@ -5662,7 +5638,7 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 		if (!pubform->puballtables &&
 			(pubform->pubupdate || pubform->pubdelete) &&
 			pub_rf_contains_invalid_column(pubid, relation, ancestors,
-									 pubform->pubviaroot))
+										   pubform->pubviaroot))
 		{
 			if (pubform->pubupdate)
 				pubdesc->rf_valid_for_update = false;
@@ -5679,7 +5655,7 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 		if (!pubform->puballtables &&
 			(pubform->pubupdate || pubform->pubdelete) &&
 			pub_collist_contains_invalid_column(pubid, relation, ancestors,
-									 pubform->pubviaroot))
+												pubform->pubviaroot))
 		{
 			if (pubform->pubupdate)
 				pubdesc->cols_valid_for_update = false;
@@ -6268,11 +6244,10 @@ load_relcache_init_file(bool shared)
 		rel->rd_indexlist = NIL;
 		rel->rd_pkindex = InvalidOid;
 		rel->rd_replidindex = InvalidOid;
-		rel->rd_attrsvalid = false;
+		rel->rd_indexattr = NULL;
 		rel->rd_keyattr = NULL;
 		rel->rd_pkattr = NULL;
 		rel->rd_idattr = NULL;
-		rel->rd_hotblockingattr = NULL;
 		rel->rd_pubdesc = NULL;
 		rel->rd_statvalid = false;
 		rel->rd_statlist = NIL;
@@ -6283,7 +6258,7 @@ load_relcache_init_file(bool shared)
 		rel->rd_firstRelfilenodeSubid = InvalidSubTransactionId;
 		rel->rd_droppedSubid = InvalidSubTransactionId;
 		rel->rd_amcache = NULL;
-		MemSet(&rel->pgstat_info, 0, sizeof(rel->pgstat_info));
+		rel->pgstat_info = NULL;
 
 		/*
 		 * Recompute lock and physical addressing info.  This is needed in

@@ -73,7 +73,7 @@ typedef struct PendingRelSync
 } PendingRelSync;
 
 static PendingRelDelete *pendingDeletes = NULL; /* head of linked list */
-HTAB	   *pendingSyncHash = NULL;
+static HTAB *pendingSyncHash = NULL;
 
 
 /*
@@ -340,16 +340,16 @@ RelationTruncate(Relation rel, BlockNumber nblocks)
 	 * is in progress.
 	 *
 	 * The truncation operation might drop buffers that the checkpoint
-	 * otherwise would have flushed. If it does, then it's essential that
-	 * the files actually get truncated on disk before the checkpoint record
-	 * is written. Otherwise, if reply begins from that checkpoint, the
+	 * otherwise would have flushed. If it does, then it's essential that the
+	 * files actually get truncated on disk before the checkpoint record is
+	 * written. Otherwise, if reply begins from that checkpoint, the
 	 * to-be-truncated blocks might still exist on disk but have older
-	 * contents than expected, which can cause replay to fail. It's OK for
-	 * the blocks to not exist on disk at all, but not for them to have the
-	 * wrong contents.
+	 * contents than expected, which can cause replay to fail. It's OK for the
+	 * blocks to not exist on disk at all, but not for them to have the wrong
+	 * contents.
 	 */
-	Assert((MyProc->delayChkpt & DELAY_CHKPT_COMPLETE) == 0);
-	MyProc->delayChkpt |= DELAY_CHKPT_COMPLETE;
+	Assert((MyProc->delayChkptFlags & DELAY_CHKPT_COMPLETE) == 0);
+	MyProc->delayChkptFlags |= DELAY_CHKPT_COMPLETE;
 
 	/*
 	 * We WAL-log the truncation before actually truncating, which means
@@ -397,7 +397,7 @@ RelationTruncate(Relation rel, BlockNumber nblocks)
 	smgrtruncate(RelationGetSmgr(rel), forks, nforks, blocks);
 
 	/* We've done all the critical work, so checkpoints are OK now. */
-	MyProc->delayChkpt &= ~DELAY_CHKPT_COMPLETE;
+	MyProc->delayChkptFlags &= ~DELAY_CHKPT_COMPLETE;
 
 	/*
 	 * Update upper-level FSM pages to account for the truncation. This is

@@ -277,9 +277,9 @@ bool		progress_timestamp = false; /* progress report with Unix time */
 int			nclients = 1;		/* number of clients */
 int			nthreads = 1;		/* number of threads */
 bool		is_connect;			/* establish connection for each transaction */
-bool		report_per_command = false;	/* report per-command latencies, retries
-										 * after errors and failures (errors
-										 * without retrying) */
+bool		report_per_command = false; /* report per-command latencies,
+										 * retries after errors and failures
+										 * (errors without retrying) */
 int			main_pid;			/* main process id used in log filename */
 
 /*
@@ -302,8 +302,8 @@ int			main_pid;			/* main process id used in log filename */
  */
 uint32		max_tries = 1;
 
-bool		failures_detailed = false;	/* whether to group failures in reports
-										 * or logs by basic types */
+bool		failures_detailed = false;	/* whether to group failures in
+										 * reports or logs by basic types */
 
 const char *pghost = NULL;
 const char *pgport = NULL;
@@ -349,8 +349,8 @@ typedef struct
 
 	/*
 	 * The maximum number of variables that we can currently store in 'vars'
-	 * without having to reallocate more space. We must always have max_vars >=
-	 * nvars.
+	 * without having to reallocate more space. We must always have max_vars
+	 * >= nvars.
 	 */
 	int			max_vars;
 
@@ -390,17 +390,17 @@ typedef struct StatsData
 {
 	pg_time_usec_t start_time;	/* interval start time, for aggregates */
 
-	/*
-	 * Transactions are counted depending on their execution and outcome. First
-	 * a transaction may have started or not: skipped transactions occur under
-	 * --rate and --latency-limit when the client is too late to execute them.
-	 * Secondly, a started transaction may ultimately succeed or fail, possibly
-	 * after some retries when --max-tries is not one. Thus
+	/*----------
+	 * Transactions are counted depending on their execution and outcome.
+	 * First a transaction may have started or not: skipped transactions occur
+	 * under --rate and --latency-limit when the client is too late to execute
+	 * them. Secondly, a started transaction may ultimately succeed or fail,
+	 * possibly after some retries when --max-tries is not one. Thus
 	 *
 	 * the number of all transactions =
 	 *   'skipped' (it was too late to execute them) +
 	 *   'cnt' (the number of successful transactions) +
-	 *   failed (the number of failed transactions).
+	 *   'failed' (the number of failed transactions).
 	 *
 	 * A successful transaction can have several unsuccessful tries before a
 	 * successful run. Thus
@@ -419,11 +419,11 @@ typedef struct StatsData
 	 * failed (the number of failed transactions) =
 	 *   'serialization_failures' (they got a serialization error and were not
 	 *                             successfully retried) +
-	 *   'deadlock_failures' (they got a deadlock error and were not successfully
-	 *                        retried).
+	 *   'deadlock_failures' (they got a deadlock error and were not
+	 *                        successfully retried).
 	 *
-	 * If the transaction was retried after a serialization or a deadlock error
-	 * this does not guarantee that this retry was successful. Thus
+	 * If the transaction was retried after a serialization or a deadlock
+	 * error this does not guarantee that this retry was successful. Thus
 	 *
 	 * 'retries' (number of retries) =
 	 *   number of retries in all retried transactions =
@@ -433,18 +433,20 @@ typedef struct StatsData
 	 * 'retried' (number of all retried transactions) =
 	 *   successfully retried transactions +
 	 *   failed transactions.
+	 *----------
 	 */
 	int64		cnt;			/* number of successful transactions, not
 								 * including 'skipped' */
 	int64		skipped;		/* number of transactions skipped under --rate
 								 * and --latency-limit */
-	int64		retries;		/* number of retries after a serialization or a
-								 * deadlock error in all the transactions */
-	int64		retried;		/* number of all transactions that were retried
-								 * after a serialization or a deadlock error
-								 * (perhaps the last try was unsuccessful) */
-	int64		serialization_failures;	/* number of transactions that were not
-										 * successfully retried after a
+	int64		retries;		/* number of retries after a serialization or
+								 * a deadlock error in all the transactions */
+	int64		retried;		/* number of all transactions that were
+								 * retried after a serialization or a deadlock
+								 * error (perhaps the last try was
+								 * unsuccessful) */
+	int64		serialization_failures; /* number of transactions that were
+										 * not successfully retried after a
 										 * serialization error */
 	int64		deadlock_failures;	/* number of transactions that were not
 									 * successfully retried after a deadlock
@@ -559,16 +561,15 @@ typedef enum
 	 * States for failed commands.
 	 *
 	 * If the SQL/meta command fails, in CSTATE_ERROR clean up after an error:
-	 * - clear the conditional stack;
-	 * - if we have an unterminated (possibly failed) transaction block, send
-	 * the rollback command to the server and wait for the result in
-	 * CSTATE_WAIT_ROLLBACK_RESULT. If something goes wrong with rolling back,
-	 * go to CSTATE_ABORTED.
+	 * (1) clear the conditional stack; (2) if we have an unterminated
+	 * (possibly failed) transaction block, send the rollback command to the
+	 * server and wait for the result in CSTATE_WAIT_ROLLBACK_RESULT.  If
+	 * something goes wrong with rolling back, go to CSTATE_ABORTED.
 	 *
-	 * But if everything is ok we are ready for future transactions: if this is
-	 * a serialization or deadlock error and we can re-execute the transaction
-	 * from the very beginning, go to CSTATE_RETRY; otherwise go to
-	 * CSTATE_FAILURE.
+	 * But if everything is ok we are ready for future transactions: if this
+	 * is a serialization or deadlock error and we can re-execute the
+	 * transaction from the very beginning, go to CSTATE_RETRY; otherwise go
+	 * to CSTATE_FAILURE.
 	 *
 	 * In CSTATE_RETRY report an error, set the same parameters for the
 	 * transaction execution as in the previous tries and process the first
@@ -622,7 +623,7 @@ typedef struct
 	int			command;		/* command number in script */
 
 	/* client variables */
-	Variables   variables;
+	Variables	variables;
 
 	/* various times about current transaction in microseconds */
 	pg_time_usec_t txn_scheduled;	/* scheduled start time of transaction */
@@ -633,19 +634,20 @@ typedef struct
 	bool		prepared[MAX_SCRIPTS];	/* whether client prepared the script */
 
 	/*
-	 * For processing failures and repeating transactions with serialization or
-	 * deadlock errors:
+	 * For processing failures and repeating transactions with serialization
+	 * or deadlock errors:
 	 */
-	EStatus		estatus;	/* the error status of the current transaction
-							 * execution; this is ESTATUS_NO_ERROR if there were
-							 * no errors */
-	pg_prng_state	random_state;	/* random state */
-	uint32			tries;		/* how many times have we already tried the
+	EStatus		estatus;		/* the error status of the current transaction
+								 * execution; this is ESTATUS_NO_ERROR if
+								 * there were no errors */
+	pg_prng_state random_state; /* random state */
+	uint32		tries;			/* how many times have we already tried the
 								 * current transaction? */
 
 	/* per client collected stats */
-	int64		cnt;			/* client transaction count, for -t; skipped and
-								 * failed transactions are also counted here */
+	int64		cnt;			/* client transaction count, for -t; skipped
+								 * and failed transactions are also counted
+								 * here */
 } CState;
 
 /*
@@ -771,7 +773,7 @@ static ParsedScript sql_script[MAX_SCRIPTS];	/* SQL script files */
 static int	num_scripts;		/* number of scripts in sql_script[] */
 static int64 total_weight = 0;
 
-static bool	verbose_errors = false;	/* print verbose messages of all errors */
+static bool verbose_errors = false; /* print verbose messages of all errors */
 
 /* Builtin test scripts */
 typedef struct BuiltinScript
@@ -921,11 +923,11 @@ usage(void)
 		   "  --log-prefix=PREFIX      prefix for transaction time log file\n"
 		   "                           (default: \"pgbench_log\")\n"
 		   "  --max-tries=NUM          max number of tries to run transaction (default: 1)\n"
-		   "  --verbose-errors         print messages of all errors\n"
 		   "  --progress-timestamp     use Unix epoch timestamps for progress\n"
 		   "  --random-seed=SEED       set random seed (\"time\", \"rand\", integer)\n"
 		   "  --sampling-rate=NUM      fraction of transactions to log (e.g., 0.01 for 1%%)\n"
 		   "  --show-script=NAME       show builtin script code, then exit\n"
+		   "  --verbose-errors         print messages of all errors\n"
 		   "\nCommon options:\n"
 		   "  -d, --debug              print debugging output\n"
 		   "  -h, --host=HOSTNAME      database server host or socket directory\n"
@@ -1502,8 +1504,7 @@ accumStats(StatsData *stats, bool skipped, double lat, double lag,
 			break;
 		default:
 			/* internal error which should never occur */
-			pg_log_fatal("unexpected error status: %d", estatus);
-			exit(1);
+			pg_fatal("unexpected error status: %d", estatus);
 	}
 }
 
@@ -1516,8 +1517,8 @@ executeStatement(PGconn *con, const char *sql)
 	res = PQexec(con, sql);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 	{
-		pg_log_fatal("query failed: %s", PQerrorMessage(con));
-		pg_log_info("query was: %s", sql);
+		pg_log_error("query failed: %s", PQerrorMessage(con));
+		pg_log_error_detail("Query was: %s", sql);
 		exit(1);
 	}
 	PQclear(res);
@@ -1533,7 +1534,7 @@ tryExecuteStatement(PGconn *con, const char *sql)
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 	{
 		pg_log_error("%s", PQerrorMessage(con));
-		pg_log_info("(ignoring this error and continuing anyway)");
+		pg_log_error_detail("(ignoring this error and continuing anyway)");
 	}
 	PQclear(res);
 }
@@ -1851,8 +1852,7 @@ putVariable(Variables *variables, const char *context, char *name,
 	/* dup then free, in case value is pointing at this variable */
 	val = pg_strdup(value);
 
-	if (var->svalue)
-		free(var->svalue);
+	free(var->svalue);
 	var->svalue = val;
 	var->value.type = PGBT_NO_VALUE;
 
@@ -1871,8 +1871,7 @@ putVariableValue(Variables *variables, const char *context, char *name,
 	if (!var)
 		return false;
 
-	if (var->svalue)
-		free(var->svalue);
+	free(var->svalue);
 	var->svalue = NULL;
 	var->value = *value;
 
@@ -2878,8 +2877,7 @@ evaluateExpr(CState *st, PgBenchExpr *expr, PgBenchValue *retval)
 
 		default:
 			/* internal error which should never occur */
-			pg_log_fatal("unexpected enode type in evaluation: %d", expr->etype);
-			exit(1);
+			pg_fatal("unexpected enode type in evaluation: %d", expr->etype);
 	}
 }
 
@@ -3052,7 +3050,7 @@ commandError(CState *st, const char *message)
 {
 	Assert(sql_script[st->use_file].commands[st->command]->type == SQL_COMMAND);
 	pg_log_info("client %d got an error in command %d (SQL) of script %d; %s",
-				 st->id, st->command, st->use_file, message);
+				st->id, st->command, st->use_file, message);
 }
 
 /* return a script number with a weighted choice. */
@@ -3291,8 +3289,8 @@ readCommandResponse(CState *st, MetaCommand meta, char *varprefix)
 
 			case PGRES_NONFATAL_ERROR:
 			case PGRES_FATAL_ERROR:
-				st->estatus = getSQLErrorStatus(
-					PQresultErrorField(res, PG_DIAG_SQLSTATE));
+				st->estatus = getSQLErrorStatus(PQresultErrorField(res,
+																   PG_DIAG_SQLSTATE));
 				if (canRetryError(st->estatus))
 				{
 					if (verbose_errors)
@@ -3399,13 +3397,15 @@ doRetry(CState *st, pg_time_usec_t *now)
 	Assert(max_tries || latency_limit || duration > 0);
 
 	/*
-	 * We cannot retry the error if we have reached the maximum number of tries.
+	 * We cannot retry the error if we have reached the maximum number of
+	 * tries.
 	 */
 	if (max_tries && st->tries >= max_tries)
 		return false;
 
 	/*
-	 * We cannot retry the error if we spent too much time on this transaction.
+	 * We cannot retry the error if we spent too much time on this
+	 * transaction.
 	 */
 	if (latency_limit)
 	{
@@ -3434,14 +3434,15 @@ discardUntilSync(CState *st)
 	if (!PQpipelineSync(st->con))
 	{
 		pg_log_error("client %d aborted: failed to send a pipeline sync",
-					st->id);
+					 st->id);
 		return 0;
 	}
 
 	/* receive PGRES_PIPELINE_SYNC and null following it */
-	for(;;)
+	for (;;)
 	{
-		PGresult *res = PQgetResult(st->con);
+		PGresult   *res = PQgetResult(st->con);
+
 		if (PQresultStatus(res) == PGRES_PIPELINE_SYNC)
 		{
 			PQclear(res);
@@ -3452,7 +3453,7 @@ discardUntilSync(CState *st)
 		PQclear(res);
 	}
 
-	/* exit pipline */
+	/* exit pipeline */
 	if (PQexitPipelineMode(st->con) != 1)
 	{
 		pg_log_error("client %d aborted: failed to exit pipeline mode for rolling back the failed transaction",
@@ -3486,9 +3487,10 @@ getTransactionStatus(PGconn *con)
 			/* fall through */
 		case PQTRANS_ACTIVE:
 		default:
+
 			/*
-			 * We cannot find out whether we are in a transaction block or not.
-			 * Internal error which should never occur.
+			 * We cannot find out whether we are in a transaction block or
+			 * not. Internal error which should never occur.
 			 */
 			pg_log_error("unexpected transaction status %d", tx_status);
 			return TSTATUS_OTHER_ERROR;
@@ -3515,17 +3517,17 @@ printVerboseErrorMessages(CState *st, pg_time_usec_t *now, bool is_retry)
 	printfPQExpBuffer(buf, "client %d ", st->id);
 	appendPQExpBuffer(buf, "%s",
 					  (is_retry ?
-						"repeats the transaction after the error" :
-						"ends the failed transaction"));
-	appendPQExpBuffer(buf, " (try %d", st->tries);
+					   "repeats the transaction after the error" :
+					   "ends the failed transaction"));
+	appendPQExpBuffer(buf, " (try %u", st->tries);
 
 	/* Print max_tries if it is not unlimitted. */
 	if (max_tries)
-		appendPQExpBuffer(buf, "/%d", max_tries);
+		appendPQExpBuffer(buf, "/%u", max_tries);
 
 	/*
-	 * If the latency limit is used, print a percentage of the current transaction
-	 * latency from the latency limit.
+	 * If the latency limit is used, print a percentage of the current
+	 * transaction latency from the latency limit.
 	 */
 	if (latency_limit)
 	{
@@ -3621,8 +3623,8 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 
 				/*
 				 * It is the first try to run this transaction. Remember the
-				 * random state: maybe it will get an error and we will need to
-				 * run it again.
+				 * random state: maybe it will get an error and we will need
+				 * to run it again.
 				 */
 				st->random_state = st->cs_func_rs;
 
@@ -4000,8 +4002,8 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 					}
 
 					/*
-					 * Check if we have a (failed) transaction block or not, and
-					 * roll it back if any.
+					 * Check if we have a (failed) transaction block or not,
+					 * and roll it back if any.
 					 */
 					tstatus = getTransactionStatus(st->con);
 					if (tstatus == TSTATUS_IN_BLOCK)
@@ -4019,9 +4021,9 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 					else if (tstatus == TSTATUS_IDLE)
 					{
 						/*
-						* If time is over, we're done;
-						* otherwise, check if we can retry the error.
-						*/
+						 * If time is over, we're done; otherwise, check if we
+						 * can retry the error.
+						 */
 						st->state = timer_exceeded ? CSTATE_FINISHED :
 							doRetry(st, &now) ? CSTATE_RETRY : CSTATE_FAILURE;
 					}
@@ -4041,7 +4043,7 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 				 */
 			case CSTATE_WAIT_ROLLBACK_RESULT:
 				{
-					PGresult *res;
+					PGresult   *res;
 
 					pg_log_debug("client %d receiving", st->id);
 					if (!PQconsumeInput(st->con))
@@ -4052,7 +4054,7 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 						break;
 					}
 					if (PQisBusy(st->con))
-						return;		/* don't have the whole result yet */
+						return; /* don't have the whole result yet */
 
 					/*
 					 * Read and discard the query result;
@@ -4068,8 +4070,8 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 							Assert(res == NULL);
 
 							/*
-							 * If time is over, we're done;
-							 * otherwise, check if we can retry the error.
+							 * If time is over, we're done; otherwise, check
+							 * if we can retry the error.
 							 */
 							st->state = timer_exceeded ? CSTATE_FINISHED :
 								doRetry(st, &now) ? CSTATE_RETRY : CSTATE_FAILURE;
@@ -4091,7 +4093,8 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 				command = sql_script[st->use_file].commands[st->command];
 
 				/*
-				 * Inform that the transaction will be retried after the error.
+				 * Inform that the transaction will be retried after the
+				 * error.
 				 */
 				if (verbose_errors)
 					printVerboseErrorMessages(st, &now, true);
@@ -4101,8 +4104,8 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 				command->retries++;
 
 				/*
-				 * Reset the random state as they were at the beginning
-				 * of the transaction.
+				 * Reset the random state as they were at the beginning of the
+				 * transaction.
 				 */
 				st->cs_func_rs = st->random_state;
 
@@ -4190,8 +4193,9 @@ advanceConnectionState(TState *thread, CState *st, StatsData *agg)
 					st->state = CSTATE_CHOOSE_SCRIPT;
 
 					/*
-					 * Ensure that we always return on this point, so as to avoid
-					 * an infinite loop if the script only contains meta commands.
+					 * Ensure that we always return on this point, so as to
+					 * avoid an infinite loop if the script only contains meta
+					 * commands.
 					 */
 					return;
 				}
@@ -4447,8 +4451,7 @@ getResultString(bool skipped, EStatus estatus)
 				return "deadlock";
 			default:
 				/* internal error which should never occur */
-				pg_log_fatal("unexpected error status: %d", estatus);
-				exit(1);
+				pg_fatal("unexpected error status: %d", estatus);
 		}
 	}
 	else
@@ -4494,6 +4497,16 @@ doLog(TState *thread, CState *st,
 
 		while ((next = agg->start_time + agg_interval * INT64CONST(1000000)) <= now)
 		{
+			double		lag_sum = 0.0;
+			double		lag_sum2 = 0.0;
+			double		lag_min = 0.0;
+			double		lag_max = 0.0;
+			int64		skipped = 0;
+			int64		serialization_failures = 0;
+			int64		deadlock_failures = 0;
+			int64		retried = 0;
+			int64		retries = 0;
+
 			/* print aggregated report to logfile */
 			fprintf(logfile, INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
 					agg->start_time / 1000000,	/* seconds since Unix epoch */
@@ -4503,27 +4516,39 @@ doLog(TState *thread, CState *st,
 					agg->latency.min,
 					agg->latency.max);
 
-			if (failures_detailed)
-				fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT,
-						agg->serialization_failures,
-						agg->deadlock_failures);
-			else
-				fprintf(logfile, " " INT64_FORMAT, getFailures(agg));
-
 			if (throttle_delay)
 			{
-				fprintf(logfile, " %.0f %.0f %.0f %.0f",
-						agg->lag.sum,
-						agg->lag.sum2,
-						agg->lag.min,
-						agg->lag.max);
-				if (latency_limit)
-					fprintf(logfile, " " INT64_FORMAT, agg->skipped);
+				lag_sum = agg->lag.sum;
+				lag_sum2 = agg->lag.sum2;
+				lag_min = agg->lag.min;
+				lag_max = agg->lag.max;
 			}
+			fprintf(logfile, " %.0f %.0f %.0f %.0f",
+					lag_sum,
+					lag_sum2,
+					lag_min,
+					lag_max);
+
+			if (latency_limit)
+				skipped = agg->skipped;
+			fprintf(logfile, " " INT64_FORMAT, skipped);
+
 			if (max_tries != 1)
-				fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT,
-						agg->retried,
-						agg->retries);
+			{
+				retried = agg->retried;
+				retries = agg->retries;
+			}
+			fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT, retried, retries);
+
+			if (failures_detailed)
+			{
+				serialization_failures = agg->serialization_failures;
+				deadlock_failures = agg->deadlock_failures;
+			}
+			fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT,
+					serialization_failures,
+					deadlock_failures);
+
 			fputc('\n', logfile);
 
 			/* reset data and move to next interval */
@@ -4550,7 +4575,7 @@ doLog(TState *thread, CState *st,
 		if (throttle_delay)
 			fprintf(logfile, " %.0f", lag);
 		if (max_tries != 1)
-			fprintf(logfile, " %d", st->tries - 1);
+			fprintf(logfile, " %u", st->tries - 1);
 		fputc('\n', logfile);
 	}
 }
@@ -4569,7 +4594,7 @@ processXactStats(TState *thread, CState *st, pg_time_usec_t *now,
 	double		latency = 0.0,
 				lag = 0.0;
 	bool		detailed = progress || throttle_delay || latency_limit ||
-						   use_log || per_script_stats;
+	use_log || per_script_stats;
 
 	if (detailed && !skipped && st->estatus == ESTATUS_NO_ERROR)
 	{
@@ -4819,7 +4844,7 @@ initGenerateDataClientSide(PGconn *con)
 	PGresult   *res;
 	int			i;
 	int64		k;
-	char		*copy_statement;
+	char	   *copy_statement;
 
 	/* used to track elapsed time and estimate of the remaining time */
 	pg_time_usec_t start;
@@ -4876,10 +4901,7 @@ initGenerateDataClientSide(PGconn *con)
 	res = PQexec(con, copy_statement);
 
 	if (PQresultStatus(res) != PGRES_COPY_IN)
-	{
-		pg_log_fatal("unexpected copy in result: %s", PQerrorMessage(con));
-		exit(1);
-	}
+		pg_fatal("unexpected copy in result: %s", PQerrorMessage(con));
 	PQclear(res);
 
 	start = pg_time_now();
@@ -4893,10 +4915,7 @@ initGenerateDataClientSide(PGconn *con)
 						  INT64_FORMAT "\t" INT64_FORMAT "\t%d\t\n",
 						  j, k / naccounts + 1, 0);
 		if (PQputline(con, sql.data))
-		{
-			pg_log_fatal("PQputline failed");
-			exit(1);
-		}
+			pg_fatal("PQputline failed");
 
 		if (CancelRequested)
 			break;
@@ -4938,15 +4957,9 @@ initGenerateDataClientSide(PGconn *con)
 		fputc('\n', stderr);	/* Need to move to next line */
 
 	if (PQputline(con, "\\.\n"))
-	{
-		pg_log_fatal("very last PQputline failed");
-		exit(1);
-	}
+		pg_fatal("very last PQputline failed");
 	if (PQendcopy(con))
-	{
-		pg_log_fatal("PQendcopy failed");
-		exit(1);
-	}
+		pg_fatal("PQendcopy failed");
 
 	termPQExpBuffer(&sql);
 
@@ -5086,17 +5099,14 @@ static void
 checkInitSteps(const char *initialize_steps)
 {
 	if (initialize_steps[0] == '\0')
-	{
-		pg_log_fatal("no initialization steps specified");
-		exit(1);
-	}
+		pg_fatal("no initialization steps specified");
 
 	for (const char *step = initialize_steps; *step != '\0'; step++)
 	{
 		if (strchr(ALL_INIT_STEPS " ", *step) == NULL)
 		{
-			pg_log_fatal("unrecognized initialization step \"%c\"", *step);
-			pg_log_info("Allowed step characters are: \"" ALL_INIT_STEPS "\".");
+			pg_log_error("unrecognized initialization step \"%c\"", *step);
+			pg_log_error_detail("Allowed step characters are: \"" ALL_INIT_STEPS "\".");
 			exit(1);
 		}
 	}
@@ -5117,10 +5127,7 @@ runInitSteps(const char *initialize_steps)
 	initPQExpBuffer(&stats);
 
 	if ((con = doConnect()) == NULL)
-	{
-		pg_log_fatal("could not create connection for initialization");
-		exit(1);
-	}
+		pg_fatal("could not create connection for initialization");
 
 	setup_cancel_handler(NULL);
 	SetCancelConn(con);
@@ -5163,7 +5170,7 @@ runInitSteps(const char *initialize_steps)
 			case ' ':
 				break;			/* ignore */
 			default:
-				pg_log_fatal("unrecognized initialization step \"%c\"", *step);
+				pg_log_error("unrecognized initialization step \"%c\"", *step);
 				PQfinish(con);
 				exit(1);
 		}
@@ -5207,21 +5214,18 @@ GetTableInfo(PGconn *con, bool scale_given)
 	{
 		char	   *sqlState = PQresultErrorField(res, PG_DIAG_SQLSTATE);
 
-		pg_log_fatal("could not count number of branches: %s", PQerrorMessage(con));
+		pg_log_error("could not count number of branches: %s", PQerrorMessage(con));
 
 		if (sqlState && strcmp(sqlState, ERRCODE_UNDEFINED_TABLE) == 0)
-			pg_log_info("Perhaps you need to do initialization (\"pgbench -i\") in database \"%s\"",
-						PQdb(con));
+			pg_log_error_hint("Perhaps you need to do initialization (\"pgbench -i\") in database \"%s\".",
+							  PQdb(con));
 
 		exit(1);
 	}
 	scale = atoi(PQgetvalue(res, 0, 0));
 	if (scale < 0)
-	{
-		pg_log_fatal("invalid count(*) from pgbench_branches: \"%s\"",
-					 PQgetvalue(res, 0, 0));
-		exit(1);
-	}
+		pg_fatal("invalid count(*) from pgbench_branches: \"%s\"",
+				 PQgetvalue(res, 0, 0));
 	PQclear(res);
 
 	/* warn if we override user-given -s switch */
@@ -5268,8 +5272,8 @@ GetTableInfo(PGconn *con, bool scale_given)
 		 * This case is unlikely as pgbench already found "pgbench_branches"
 		 * above to compute the scale.
 		 */
-		pg_log_fatal("no pgbench_accounts table found in search_path");
-		pg_log_info("Perhaps you need to do initialization (\"pgbench -i\") in database \"%s\".", PQdb(con));
+		pg_log_error("no pgbench_accounts table found in search_path");
+		pg_log_error_hint("Perhaps you need to do initialization (\"pgbench -i\") in database \"%s\".", PQdb(con));
 		exit(1);
 	}
 	else						/* PQntupes(res) == 1 */
@@ -5291,8 +5295,7 @@ GetTableInfo(PGconn *con, bool scale_given)
 			else
 			{
 				/* possibly a newer version with new partition method */
-				pg_log_fatal("unexpected partition method: \"%s\"", ps);
-				exit(1);
+				pg_fatal("unexpected partition method: \"%s\"", ps);
 			}
 		}
 
@@ -5384,7 +5387,7 @@ syntax_error(const char *source, int lineno,
 	if (command != NULL)
 		appendPQExpBuffer(&buf, " in command \"%s\"", command);
 
-	pg_log_fatal("%s", buf.data);
+	pg_log_error("%s", buf.data);
 
 	termPQExpBuffer(&buf);
 
@@ -5470,12 +5473,10 @@ static void
 free_command(Command *command)
 {
 	termPQExpBuffer(&command->lines);
-	if (command->first_line)
-		pg_free(command->first_line);
+	pg_free(command->first_line);
 	for (int i = 0; i < command->argc; i++)
 		pg_free(command->argv[i]);
-	if (command->varprefix)
-		pg_free(command->varprefix);
+	pg_free(command->varprefix);
 
 	/*
 	 * It should also free expr recursively, but this is currently not needed
@@ -5734,9 +5735,8 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 static void
 ConditionError(const char *desc, int cmdn, const char *msg)
 {
-	pg_log_fatal("condition error in script \"%s\" command %d: %s",
-				 desc, cmdn, msg);
-	exit(1);
+	pg_fatal("condition error in script \"%s\" command %d: %s",
+			 desc, cmdn, msg);
 }
 
 /*
@@ -5972,18 +5972,12 @@ process_file(const char *filename, int weight)
 	if (strcmp(filename, "-") == 0)
 		fd = stdin;
 	else if ((fd = fopen(filename, "r")) == NULL)
-	{
-		pg_log_fatal("could not open file \"%s\": %m", filename);
-		exit(1);
-	}
+		pg_fatal("could not open file \"%s\": %m", filename);
 
 	buf = read_file_contents(fd);
 
 	if (ferror(fd))
-	{
-		pg_log_fatal("could not read file \"%s\": %m", filename);
-		exit(1);
-	}
+		pg_fatal("could not read file \"%s\": %m", filename);
 
 	if (fd != stdin)
 		fclose(fd);
@@ -6036,9 +6030,9 @@ findBuiltin(const char *name)
 
 	/* error cases */
 	if (found == 0)
-		pg_log_fatal("no builtin script found for name \"%s\"", name);
+		pg_log_error("no builtin script found for name \"%s\"", name);
 	else						/* found > 1 */
-		pg_log_fatal("ambiguous builtin name: %d builtin scripts found for prefix \"%s\"", found, name);
+		pg_log_error("ambiguous builtin name: %d builtin scripts found for prefix \"%s\"", found, name);
 
 	listAvailableScripts();
 	exit(1);
@@ -6070,16 +6064,10 @@ parseScriptWeight(const char *option, char **script)
 		errno = 0;
 		wtmp = strtol(sep + 1, &badp, 10);
 		if (errno != 0 || badp == sep + 1 || *badp != '\0')
-		{
-			pg_log_fatal("invalid weight specification: %s", sep);
-			exit(1);
-		}
+			pg_fatal("invalid weight specification: %s", sep);
 		if (wtmp > INT_MAX || wtmp < 0)
-		{
-			pg_log_fatal("weight specification out of range (0 .. %d): %lld",
-						 INT_MAX, (long long) wtmp);
-			exit(1);
-		}
+			pg_fatal("weight specification out of range (0 .. %d): %lld",
+					 INT_MAX, (long long) wtmp);
 		weight = wtmp;
 	}
 	else
@@ -6096,16 +6084,10 @@ static void
 addScript(const ParsedScript *script)
 {
 	if (script->commands == NULL || script->commands[0] == NULL)
-	{
-		pg_log_fatal("empty command list for script \"%s\"", script->desc);
-		exit(1);
-	}
+		pg_fatal("empty command list for script \"%s\"", script->desc);
 
 	if (num_scripts >= MAX_SCRIPTS)
-	{
-		pg_log_fatal("at most %d SQL scripts are allowed", MAX_SCRIPTS);
-		exit(1);
-	}
+		pg_fatal("at most %d SQL scripts are allowed", MAX_SCRIPTS);
 
 	CheckConditional(script);
 
@@ -6284,7 +6266,7 @@ printResults(StatsData *total,
 	printf("number of threads: %d\n", nthreads);
 
 	if (max_tries)
-		printf("maximum number of tries: %d\n", max_tries);
+		printf("maximum number of tries: %u\n", max_tries);
 
 	if (duration <= 0)
 	{
@@ -6387,7 +6369,7 @@ printResults(StatsData *total,
 				StatsData  *sstats = &sql_script[i].stats;
 				int64		script_failures = getFailures(sstats);
 				int64		script_total_cnt =
-					sstats->cnt + sstats->skipped + script_failures;
+				sstats->cnt + sstats->skipped + script_failures;
 
 				printf("SQL script %d: %s\n"
 					   " - weight: %d (targets %.1f%% of total)\n"
@@ -6505,7 +6487,7 @@ set_random_seed(const char *seed)
 		if (sscanf(seed, "%lu%c", &ulseed, &garbage) != 1)
 		{
 			pg_log_error("unrecognized random seed option \"%s\"", seed);
-			pg_log_info("Expecting an unsigned integer, \"time\" or \"rand\"");
+			pg_log_error_detail("Expecting an unsigned integer, \"time\" or \"rand\".");
 			return false;
 		}
 		iseed = (uint64) ulseed;
@@ -6639,10 +6621,7 @@ main(int argc, char **argv)
 
 	/* set random seed early, because it may be used while parsing scripts. */
 	if (!set_random_seed(getenv("PGBENCH_RANDOM_SEED")))
-	{
-		pg_log_fatal("error while setting random seed from PGBENCH_RANDOM_SEED environment variable");
-		exit(1);
-	}
+		pg_fatal("error while setting random seed from PGBENCH_RANDOM_SEED environment variable");
 
 	while ((c = getopt_long(argc, argv, "iI:h:nvp:dqb:SNc:j:Crs:t:T:U:lf:D:F:M:P:R:L:", long_options, &optindex)) != -1)
 	{
@@ -6654,8 +6633,7 @@ main(int argc, char **argv)
 				is_init_mode = true;
 				break;
 			case 'I':
-				if (initialize_steps)
-					pg_free(initialize_steps);
+				pg_free(initialize_steps);
 				initialize_steps = pg_strdup(optarg);
 				checkInitSteps(initialize_steps);
 				initialization_option_set = true;
@@ -6689,15 +6667,12 @@ main(int argc, char **argv)
 #else							/* but BSD doesn't ... */
 				if (getrlimit(RLIMIT_OFILE, &rlim) == -1)
 #endif							/* RLIMIT_NOFILE */
-				{
-					pg_log_fatal("getrlimit failed: %m");
-					exit(1);
-				}
+					pg_fatal("getrlimit failed: %m");
 				if (rlim.rlim_cur < nclients + 3)
 				{
-					pg_log_fatal("need at least %d open files, but system limit is %ld",
+					pg_log_error("need at least %d open files, but system limit is %ld",
 								 nclients + 3, (long) rlim.rlim_cur);
-					pg_log_info("Reduce number of clients, or use limit/ulimit to increase the system limit.");
+					pg_log_error_hint("Reduce number of clients, or use limit/ulimit to increase the system limit.");
 					exit(1);
 				}
 #endif							/* HAVE_GETRLIMIT */
@@ -6711,10 +6686,7 @@ main(int argc, char **argv)
 				}
 #ifndef ENABLE_THREAD_SAFETY
 				if (nthreads != 1)
-				{
-					pg_log_fatal("threads are not supported on this platform; use -j1");
-					exit(1);
-				}
+					pg_fatal("threads are not supported on this platform; use -j1");
 #endif							/* !ENABLE_THREAD_SAFETY */
 				break;
 			case 'C':
@@ -6787,10 +6759,7 @@ main(int argc, char **argv)
 					benchmarking_option_set = true;
 
 					if ((p = strchr(optarg, '=')) == NULL || p == optarg || *(p + 1) == '\0')
-					{
-						pg_log_fatal("invalid variable definition: \"%s\"", optarg);
-						exit(1);
-					}
+						pg_fatal("invalid variable definition: \"%s\"", optarg);
 
 					*p++ = '\0';
 					if (!putVariable(&state[0].variables, "option", optarg, p))
@@ -6809,10 +6778,7 @@ main(int argc, char **argv)
 					if (strcmp(optarg, QUERYMODE[querymode]) == 0)
 						break;
 				if (querymode >= NUM_QUERYMODE)
-				{
-					pg_log_fatal("invalid query mode (-M): \"%s\"", optarg);
-					exit(1);
-				}
+					pg_fatal("invalid query mode (-M): \"%s\"", optarg);
 				break;
 			case 'P':
 				benchmarking_option_set = true;
@@ -6828,10 +6794,7 @@ main(int argc, char **argv)
 					benchmarking_option_set = true;
 
 					if (throttle_value <= 0.0)
-					{
-						pg_log_fatal("invalid rate limit: \"%s\"", optarg);
-						exit(1);
-					}
+						pg_fatal("invalid rate limit: \"%s\"", optarg);
 					/* Invert rate limit into per-transaction delay in usec */
 					throttle_delay = 1000000.0 / throttle_value;
 				}
@@ -6841,10 +6804,7 @@ main(int argc, char **argv)
 					double		limit_ms = atof(optarg);
 
 					if (limit_ms <= 0.0)
-					{
-						pg_log_fatal("invalid latency limit: \"%s\"", optarg);
-						exit(1);
-					}
+						pg_fatal("invalid latency limit: \"%s\"", optarg);
 					benchmarking_option_set = true;
 					latency_limit = (int64) (limit_ms * 1000);
 				}
@@ -6865,10 +6825,7 @@ main(int argc, char **argv)
 				benchmarking_option_set = true;
 				sample_rate = atof(optarg);
 				if (sample_rate <= 0.0 || sample_rate > 1.0)
-				{
-					pg_log_fatal("invalid sampling rate: \"%s\"", optarg);
-					exit(1);
-				}
+					pg_fatal("invalid sampling rate: \"%s\"", optarg);
 				break;
 			case 5:				/* aggregate-interval */
 				benchmarking_option_set = true;
@@ -6891,10 +6848,7 @@ main(int argc, char **argv)
 			case 9:				/* random-seed */
 				benchmarking_option_set = true;
 				if (!set_random_seed(optarg))
-				{
-					pg_log_fatal("error while setting random seed from --random-seed option");
-					exit(1);
-				}
+					pg_fatal("error while setting random seed from --random-seed option");
 				break;
 			case 10:			/* list */
 				{
@@ -6906,7 +6860,7 @@ main(int argc, char **argv)
 				break;
 			case 11:			/* partitions */
 				initialization_option_set = true;
-				if (!option_parse_int(optarg, "--partitions", 1, INT_MAX,
+				if (!option_parse_int(optarg, "--partitions", 0, INT_MAX,
 									  &partitions))
 					exit(1);
 				break;
@@ -6917,11 +6871,8 @@ main(int argc, char **argv)
 				else if (pg_strcasecmp(optarg, "hash") == 0)
 					partition_method = PART_HASH;
 				else
-				{
-					pg_log_fatal("invalid partition method, expecting \"range\" or \"hash\", got: \"%s\"",
-								 optarg);
-					exit(1);
-				}
+					pg_fatal("invalid partition method, expecting \"range\" or \"hash\", got: \"%s\"",
+							 optarg);
 				break;
 			case 13:			/* failures-detailed */
 				benchmarking_option_set = true;
@@ -6932,10 +6883,7 @@ main(int argc, char **argv)
 					int32		max_tries_arg = atoi(optarg);
 
 					if (max_tries_arg < 0)
-					{
-						pg_log_fatal("invalid number of maximum tries: \"%s\"", optarg);
-						exit(1);
-					}
+						pg_fatal("invalid number of maximum tries: \"%s\"", optarg);
 
 					benchmarking_option_set = true;
 					max_tries = (uint32) max_tries_arg;
@@ -6946,9 +6894,9 @@ main(int argc, char **argv)
 				verbose_errors = true;
 				break;
 			default:
-				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
+				/* getopt_long already emitted a complaint */
+				pg_log_error_hint("Try \"%s --help\" for more information.", progname);
 				exit(1);
-				break;
 		}
 	}
 
@@ -6974,10 +6922,7 @@ main(int argc, char **argv)
 	}
 
 	if (total_weight == 0 && !is_init_mode)
-	{
-		pg_log_fatal("total script weight must not be zero");
-		exit(1);
-	}
+		pg_fatal("total script weight must not be zero");
 
 	/* show per script stats if several scripts are used */
 	if (num_scripts > 1)
@@ -7012,25 +6957,19 @@ main(int argc, char **argv)
 
 	if (optind < argc)
 	{
-		pg_log_fatal("too many command-line arguments (first is \"%s\")",
+		pg_log_error("too many command-line arguments (first is \"%s\")",
 					 argv[optind]);
-		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
+		pg_log_error_hint("Try \"%s --help\" for more information.", progname);
 		exit(1);
 	}
 
 	if (is_init_mode)
 	{
 		if (benchmarking_option_set)
-		{
-			pg_log_fatal("some of the specified options cannot be used in initialization (-i) mode");
-			exit(1);
-		}
+			pg_fatal("some of the specified options cannot be used in initialization (-i) mode");
 
 		if (partitions == 0 && partition_method != PART_NONE)
-		{
-			pg_log_fatal("--partition-method requires greater than zero --partitions");
-			exit(1);
-		}
+			pg_fatal("--partition-method requires greater than zero --partitions");
 
 		/* set default method */
 		if (partitions > 0 && partition_method == PART_NONE)
@@ -7066,17 +7005,11 @@ main(int argc, char **argv)
 	else
 	{
 		if (initialization_option_set)
-		{
-			pg_log_fatal("some of the specified options cannot be used in benchmarking mode");
-			exit(1);
-		}
+			pg_fatal("some of the specified options cannot be used in benchmarking mode");
 	}
 
 	if (nxacts > 0 && duration > 0)
-	{
-		pg_log_fatal("specify either a number of transactions (-t) or a duration (-T), not both");
-		exit(1);
-	}
+		pg_fatal("specify either a number of transactions (-t) or a duration (-T), not both");
 
 	/* Use DEFAULT_NXACTS if neither nxacts nor duration is specified. */
 	if (nxacts <= 0 && duration <= 0)
@@ -7084,55 +7017,31 @@ main(int argc, char **argv)
 
 	/* --sampling-rate may be used only with -l */
 	if (sample_rate > 0.0 && !use_log)
-	{
-		pg_log_fatal("log sampling (--sampling-rate) is allowed only when logging transactions (-l)");
-		exit(1);
-	}
+		pg_fatal("log sampling (--sampling-rate) is allowed only when logging transactions (-l)");
 
 	/* --sampling-rate may not be used with --aggregate-interval */
 	if (sample_rate > 0.0 && agg_interval > 0)
-	{
-		pg_log_fatal("log sampling (--sampling-rate) and aggregation (--aggregate-interval) cannot be used at the same time");
-		exit(1);
-	}
+		pg_fatal("log sampling (--sampling-rate) and aggregation (--aggregate-interval) cannot be used at the same time");
 
 	if (agg_interval > 0 && !use_log)
-	{
-		pg_log_fatal("log aggregation is allowed only when actually logging transactions");
-		exit(1);
-	}
+		pg_fatal("log aggregation is allowed only when actually logging transactions");
 
 	if (!use_log && logfile_prefix)
-	{
-		pg_log_fatal("log file prefix (--log-prefix) is allowed only when logging transactions (-l)");
-		exit(1);
-	}
+		pg_fatal("log file prefix (--log-prefix) is allowed only when logging transactions (-l)");
 
 	if (duration > 0 && agg_interval > duration)
-	{
-		pg_log_fatal("number of seconds for aggregation (%d) must not be higher than test duration (%d)", agg_interval, duration);
-		exit(1);
-	}
+		pg_fatal("number of seconds for aggregation (%d) must not be higher than test duration (%d)", agg_interval, duration);
 
 	if (duration > 0 && agg_interval > 0 && duration % agg_interval != 0)
-	{
-		pg_log_fatal("duration (%d) must be a multiple of aggregation interval (%d)", duration, agg_interval);
-		exit(1);
-	}
+		pg_fatal("duration (%d) must be a multiple of aggregation interval (%d)", duration, agg_interval);
 
 	if (progress_timestamp && progress == 0)
-	{
-		pg_log_fatal("--progress-timestamp is allowed only under --progress");
-		exit(1);
-	}
+		pg_fatal("--progress-timestamp is allowed only under --progress");
 
 	if (!max_tries)
 	{
 		if (!latency_limit && duration <= 0)
-		{
-			pg_log_fatal("an unlimited number of transaction tries can only be used with --latency-limit or a duration (-T)");
-			exit(1);
-		}
+			pg_fatal("an unlimited number of transaction tries can only be used with --latency-limit or a duration (-T)");
 	}
 
 	/*
@@ -7182,10 +7091,7 @@ main(int argc, char **argv)
 	/* opening connection... */
 	con = doConnect();
 	if (con == NULL)
-	{
-		pg_log_fatal("could not create connection for setup");
-		exit(1);
-	}
+		pg_fatal("could not create connection for setup");
 
 	/* report pgbench and server versions */
 	printVersion(con);
@@ -7293,10 +7199,7 @@ main(int argc, char **argv)
 
 	errno = THREAD_BARRIER_INIT(&barrier, nthreads);
 	if (errno != 0)
-	{
-		pg_log_fatal("could not initialize barrier: %m");
-		exit(1);
-	}
+		pg_fatal("could not initialize barrier: %m");
 
 #ifdef ENABLE_THREAD_SAFETY
 	/* start all threads but thread 0 which is executed directly later */
@@ -7308,10 +7211,7 @@ main(int argc, char **argv)
 		errno = THREAD_CREATE(&thread->thread, threadRun, thread);
 
 		if (errno != 0)
-		{
-			pg_log_fatal("could not create thread: %m");
-			exit(1);
-		}
+			pg_fatal("could not create thread: %m");
 	}
 #else
 	Assert(nthreads == 1);
@@ -7361,7 +7261,7 @@ main(int argc, char **argv)
 
 	/*
 	 * All connections should be already closed in threadRun(), so this
-	 * disconnect_all() will be a no-op, but clean up the connecions just to
+	 * disconnect_all() will be a no-op, but clean up the connections just to
 	 * be sure. We don't need to measure the disconnection delays here.
 	 */
 	disconnect_all(state, nclients);
@@ -7379,7 +7279,7 @@ main(int argc, char **argv)
 	THREAD_BARRIER_DESTROY(&barrier);
 
 	if (exit_code != 0)
-		pg_log_fatal("Run was aborted; the above results are incomplete.");
+		pg_log_error("Run was aborted; the above results are incomplete.");
 
 	return exit_code;
 }
@@ -7413,10 +7313,7 @@ threadRun(void *arg)
 		thread->logfile = fopen(logpath, "w");
 
 		if (thread->logfile == NULL)
-		{
-			pg_log_fatal("could not open logfile \"%s\": %m", logpath);
-			exit(1);
-		}
+			pg_fatal("could not open logfile \"%s\": %m", logpath);
 	}
 
 	/* explicitly initialize the state machines */
@@ -7441,9 +7338,8 @@ threadRun(void *arg)
 			if ((state[i].con = doConnect()) == NULL)
 			{
 				/* coldly abort on initial connection failure */
-				pg_log_fatal("could not create connection for client %d",
-							 state[i].id);
-				exit(1);
+				pg_fatal("could not create connection for client %d",
+						 state[i].id);
 			}
 		}
 	}
@@ -7713,10 +7609,7 @@ setalarm(int seconds)
 		!CreateTimerQueueTimer(&timer, queue,
 							   win32_timer_callback, NULL, seconds * 1000, 0,
 							   WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE))
-	{
-		pg_log_fatal("failed to set timer");
-		exit(1);
-	}
+		pg_fatal("failed to set timer");
 }
 
 #endif							/* WIN32 */
@@ -7860,8 +7753,7 @@ add_socket_to_set(socket_set *sa, int fd, int idx)
 		 * Doing a hard exit here is a bit grotty, but it doesn't seem worth
 		 * complicating the API to make it less grotty.
 		 */
-		pg_log_fatal("too many client connections for select()");
-		exit(1);
+		pg_fatal("too many client connections for select()");
 	}
 	FD_SET(fd, &sa->fds);
 	if (fd > sa->maxfd)

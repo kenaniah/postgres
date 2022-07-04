@@ -220,8 +220,7 @@ const TableFuncRoutine XmlTableRoutine =
 	ereport(ERROR, \
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED), \
 			 errmsg("unsupported XML feature"), \
-			 errdetail("This functionality requires the server to be built with libxml support."), \
-			 errhint("You need to rebuild PostgreSQL using %s.", "--with-libxml")))
+			 errdetail("This functionality requires the server to be built with libxml support.")))
 
 
 /* from SQL/XML:2008 section 4.9 */
@@ -4018,9 +4017,9 @@ xpath_internal(text *xpath_expr_text, xmltype *data, ArrayType *namespaces,
 
 		Assert(ARR_ELEMTYPE(namespaces) == TEXTOID);
 
-		deconstruct_array(namespaces, TEXTOID, -1, false, TYPALIGN_INT,
-						  &ns_names_uris, &ns_names_uris_nulls,
-						  &ns_count);
+		deconstruct_array_builtin(namespaces, TEXTOID,
+								  &ns_names_uris, &ns_names_uris_nulls,
+								  &ns_count);
 
 		Assert((ns_count % 2) == 0);	/* checked above */
 		ns_count /= 2;			/* count pairs only */

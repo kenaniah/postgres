@@ -92,8 +92,8 @@ typedef uint32 AclMode;			/* a bitmask of privilege bits */
 #define ACL_CREATE		(1<<9)	/* for namespaces and databases */
 #define ACL_CREATE_TEMP (1<<10) /* for databases */
 #define ACL_CONNECT		(1<<11) /* for databases */
-#define ACL_SET_VALUE	(1<<12) /* for configuration parameters */
-#define ACL_ALTER_SYSTEM (1<<13) /* for configuration parameters */
+#define ACL_SET			(1<<12) /* for configuration parameters */
+#define ACL_ALTER_SYSTEM (1<<13)	/* for configuration parameters */
 #define N_ACL_RIGHTS	14		/* 1 plus the last 1<<x */
 #define ACL_NO_RIGHTS	0
 /* Currently, SELECT ... FOR [KEY] UPDATE/SHARE requires UPDATE privileges */
@@ -123,7 +123,8 @@ typedef struct Query
 
 	QuerySource querySource;	/* where did I come from? */
 
-	uint64		queryId;		/* query identifier (can be set by plugins) */
+	/* query identifier (can be set by plugins) */
+	uint64		queryId;
 
 	bool		canSetTag;		/* do I set the command result tag? */
 
@@ -301,6 +302,7 @@ typedef struct A_Expr
 typedef struct A_Const
 {
 	NodeTag		type;
+
 	/*
 	 * Value nodes are inline for performance.  You can treat 'val' as a node,
 	 * as in IsA(&val, Integer).  'val' is not valid if isnull is true.
@@ -763,7 +765,8 @@ typedef struct DefElem
 	NodeTag		type;
 	char	   *defnamespace;	/* NULL if unqualified name */
 	char	   *defname;
-	Node	   *arg;			/* typically Integer, Float, String, or TypeName */
+	Node	   *arg;			/* typically Integer, Float, String, or
+								 * TypeName */
 	DefElemAction defaction;	/* unspecified action, or SET/ADD/DROP */
 	int			location;		/* token location, or -1 if unknown */
 } DefElem;
@@ -1151,7 +1154,7 @@ typedef struct RangeTblEntry
 	 * Fields valid for ENR RTEs (else NULL/zero):
 	 */
 	char	   *enrname;		/* name of ephemeral named relation */
-	Cardinality	enrtuples;		/* estimated or actual from caller */
+	Cardinality enrtuples;		/* estimated or actual from caller */
 
 	/*
 	 * Fields valid in all RTEs:
@@ -1402,6 +1405,7 @@ typedef struct WindowClause
 	int			frameOptions;	/* frame_clause options, see WindowDef */
 	Node	   *startOffset;	/* expression for starting bound, if any */
 	Node	   *endOffset;		/* expression for ending bound, if any */
+	List	   *runCondition;	/* qual to help short-circuit execution */
 	Oid			startInRangeFunc;	/* in_range function for startOffset */
 	Oid			endInRangeFunc; /* in_range function for endOffset */
 	Oid			inRangeColl;	/* collation for in_range tests */
@@ -1606,10 +1610,17 @@ typedef enum JsonQuotes
 } JsonQuotes;
 
 /*
- * JsonPathSpec -
- *		representation of JSON path constant
+ * JsonTableColumnType -
+ *		enumeration of JSON_TABLE column types
  */
-typedef char *JsonPathSpec;
+typedef enum JsonTableColumnType
+{
+	JTC_FOR_ORDINALITY,
+	JTC_REGULAR,
+	JTC_EXISTS,
+	JTC_FORMATTED,
+	JTC_NESTED,
+} JsonTableColumnType;
 
 /*
  * JsonOutput -
@@ -1659,10 +1670,87 @@ typedef struct JsonFuncExpr
 	JsonOutput *output;			/* output clause, if specified */
 	JsonBehavior *on_empty;		/* ON EMPTY behavior, if specified */
 	JsonBehavior *on_error;		/* ON ERROR behavior, if specified */
-	JsonWrapper	wrapper;		/* array wrapper behavior (JSON_QUERY only) */
+	JsonWrapper wrapper;		/* array wrapper behavior (JSON_QUERY only) */
 	bool		omit_quotes;	/* omit or keep quotes? (JSON_QUERY only) */
 	int			location;		/* token location, or -1 if unknown */
 } JsonFuncExpr;
+
+/*
+ * JsonTableColumn -
+ *		untransformed representation of JSON_TABLE column
+ */
+typedef struct JsonTableColumn
+{
+	NodeTag		type;
+	JsonTableColumnType coltype;	/* column type */
+	char	   *name;			/* column name */
+	TypeName   *typeName;		/* column type name */
+	char	   *pathspec;		/* path specification, if any */
+	char	   *pathname;		/* path name, if any */
+	JsonFormat *format;			/* JSON format clause, if specified */
+	JsonWrapper wrapper;		/* WRAPPER behavior for formatted columns */
+	bool		omit_quotes;	/* omit or keep quotes on scalar strings? */
+	List	   *columns;		/* nested columns */
+	JsonBehavior *on_empty;		/* ON EMPTY behavior */
+	JsonBehavior *on_error;		/* ON ERROR behavior */
+	int			location;		/* token location, or -1 if unknown */
+} JsonTableColumn;
+
+/*
+ * JsonTablePlanType -
+ *		flags for JSON_TABLE plan node types representation
+ */
+typedef enum JsonTablePlanType
+{
+	JSTP_DEFAULT,
+	JSTP_SIMPLE,
+	JSTP_JOINED,
+} JsonTablePlanType;
+
+/*
+ * JsonTablePlanJoinType -
+ *		flags for JSON_TABLE join types representation
+ */
+typedef enum JsonTablePlanJoinType
+{
+	JSTPJ_INNER = 0x01,
+	JSTPJ_OUTER = 0x02,
+	JSTPJ_CROSS = 0x04,
+	JSTPJ_UNION = 0x08,
+} JsonTablePlanJoinType;
+
+typedef struct JsonTablePlan JsonTablePlan;
+
+/*
+ * JsonTablePlan -
+ *		untransformed representation of JSON_TABLE plan node
+ */
+struct JsonTablePlan
+{
+	NodeTag		type;
+	JsonTablePlanType plan_type;	/* plan type */
+	JsonTablePlanJoinType join_type;	/* join type (for joined plan only) */
+	JsonTablePlan *plan1;		/* first joined plan */
+	JsonTablePlan *plan2;		/* second joined plan */
+	char	   *pathname;		/* path name (for simple plan only) */
+	int			location;		/* token location, or -1 if unknown */
+};
+
+/*
+ * JsonTable -
+ *		untransformed representation of JSON_TABLE
+ */
+typedef struct JsonTable
+{
+	NodeTag		type;
+	JsonCommon *common;			/* common JSON path syntax fields */
+	List	   *columns;		/* list of JsonTableColumn */
+	JsonTablePlan *plan;		/* join plan, if specified */
+	JsonBehavior *on_error;		/* ON ERROR behavior, if specified */
+	Alias	   *alias;			/* table alias in FROM clause */
+	bool		lateral;		/* does it have LATERAL prefix? */
+	int			location;		/* token location, or -1 if unknown */
+} JsonTable;
 
 /*
  * JsonKeyValue -
@@ -1722,7 +1810,7 @@ typedef struct JsonObjectConstructor
 	NodeTag		type;
 	List	   *exprs;			/* list of JsonKeyValue pairs */
 	JsonOutput *output;			/* RETURNING clause, if specified  */
-	bool		absent_on_null;	/* skip NULL values? */
+	bool		absent_on_null; /* skip NULL values? */
 	bool		unique;			/* check key uniqueness? */
 	int			location;		/* token location, or -1 if unknown */
 } JsonObjectConstructor;
@@ -1736,7 +1824,7 @@ typedef struct JsonArrayConstructor
 	NodeTag		type;
 	List	   *exprs;			/* list of JsonValueExpr elements */
 	JsonOutput *output;			/* RETURNING clause, if specified  */
-	bool		absent_on_null;	/* skip NULL elements? */
+	bool		absent_on_null; /* skip NULL elements? */
 	int			location;		/* token location, or -1 if unknown */
 } JsonArrayConstructor;
 
@@ -1750,7 +1838,7 @@ typedef struct JsonArrayQueryConstructor
 	Node	   *query;			/* subquery */
 	JsonOutput *output;			/* RETURNING clause, if specified  */
 	JsonFormat *format;			/* FORMAT clause for subquery, if specified */
-	bool		absent_on_null;	/* skip NULL elements? */
+	bool		absent_on_null; /* skip NULL elements? */
 	int			location;		/* token location, or -1 if unknown */
 } JsonArrayQueryConstructor;
 
@@ -1776,9 +1864,9 @@ typedef struct JsonAggConstructor
 typedef struct JsonObjectAgg
 {
 	NodeTag		type;
-	JsonAggConstructor *constructor; /* common fields */
+	JsonAggConstructor *constructor;	/* common fields */
 	JsonKeyValue *arg;			/* object key-value pair */
-	bool		absent_on_null;	/* skip NULL values? */
+	bool		absent_on_null; /* skip NULL values? */
 	bool		unique;			/* check key uniqueness? */
 } JsonObjectAgg;
 
@@ -1789,9 +1877,9 @@ typedef struct JsonObjectAgg
 typedef struct JsonArrayAgg
 {
 	NodeTag		type;
-	JsonAggConstructor *constructor; /* common fields */
+	JsonAggConstructor *constructor;	/* common fields */
 	JsonValueExpr *arg;			/* array element expression */
-	bool		absent_on_null;	/* skip NULL elements? */
+	bool		absent_on_null; /* skip NULL elements? */
 } JsonArrayAgg;
 
 
@@ -2072,6 +2160,7 @@ typedef enum ObjectType
 	OBJECT_OPCLASS,
 	OBJECT_OPERATOR,
 	OBJECT_OPFAMILY,
+	OBJECT_PARAMETER_ACL,
 	OBJECT_POLICY,
 	OBJECT_PROCEDURE,
 	OBJECT_PUBLICATION,
@@ -2537,7 +2626,7 @@ typedef struct Constraint
 	char		generated_when; /* ALWAYS or BY DEFAULT */
 
 	/* Fields used for unique constraints (UNIQUE and PRIMARY KEY): */
-	bool		nulls_not_distinct;	/* null treatment for UNIQUE constraints */
+	bool		nulls_not_distinct; /* null treatment for UNIQUE constraints */
 	List	   *keys;			/* String nodes naming referenced key
 								 * column(s) */
 	List	   *including;		/* String nodes naming referenced nonkey
@@ -3166,7 +3255,7 @@ typedef struct IndexStmt
 	SubTransactionId oldFirstRelfilenodeSubid;	/* rd_firstRelfilenodeSubid of
 												 * oldNode */
 	bool		unique;			/* is index unique? */
-	bool		nulls_not_distinct;	/* null treatment for UNIQUE constraints */
+	bool		nulls_not_distinct; /* null treatment for UNIQUE constraints */
 	bool		primary;		/* is index a primary key? */
 	bool		isconstraint;	/* is it for a pkey/unique constraint? */
 	bool		deferrable;		/* is the constraint DEFERRABLE? */
@@ -3924,10 +4013,6 @@ typedef enum PublicationObjSpecType
 	PUBLICATIONOBJ_TABLES_IN_SCHEMA,	/* All tables in schema */
 	PUBLICATIONOBJ_TABLES_IN_CUR_SCHEMA,	/* All tables in first element of
 											 * search_path */
-	PUBLICATIONOBJ_SEQUENCE,		/* Sequence type */
-	PUBLICATIONOBJ_SEQUENCES_IN_SCHEMA, /* Sequences in schema type */
-	PUBLICATIONOBJ_SEQUENCES_IN_CUR_SCHEMA, /* Get the first element of
-											 * search_path */
 	PUBLICATIONOBJ_CONTINUATION /* Continuation of previous type */
 } PublicationObjSpecType;
 
@@ -3946,7 +4031,7 @@ typedef struct CreatePublicationStmt
 	char	   *pubname;		/* Name of the publication */
 	List	   *options;		/* List of DefElem nodes */
 	List	   *pubobjects;		/* Optional list of publication objects */
-	List	   *for_all_objects; /* Special publication for all objects in db */
+	bool		for_all_tables; /* Special publication for all tables in db */
 } CreatePublicationStmt;
 
 typedef enum AlterPublicationAction
@@ -3969,7 +4054,7 @@ typedef struct AlterPublicationStmt
 	 * objects.
 	 */
 	List	   *pubobjects;		/* Optional list of publication objects */
-	List	   *for_all_objects; /* Special publication for all objects in db */
+	bool		for_all_tables; /* Special publication for all tables in db */
 	AlterPublicationAction action;	/* What action to perform with the given
 									 * objects */
 } AlterPublicationStmt;

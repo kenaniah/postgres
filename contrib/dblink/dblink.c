@@ -157,8 +157,7 @@ dblink_res_internalerror(PGconn *conn, PGresult *res, const char *p2)
 {
 	char	   *msg = pchomp(PQerrorMessage(conn));
 
-	if (res)
-		PQclear(res);
+	PQclear(res);
 	elog(ERROR, "%s: %s", p2, msg);
 }
 
@@ -1004,7 +1003,6 @@ materializeResult(FunctionCallInfo fcinfo, PGconn *conn, PGresult *res)
 
 			/* clean up GUC settings, if we changed any */
 			restoreLocalGucs(nestlevel);
-
 		}
 	}
 	PG_FINALLY();
@@ -2635,7 +2633,6 @@ deleteConnection(const char *name)
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("undefined connection name")));
-
 }
 
 static void
@@ -2758,8 +2755,7 @@ dblink_res_error(PGconn *conn, const char *conname, PGresult *res,
 	 * leaking all the strings too, but those are in palloc'd memory that will
 	 * get cleaned up eventually.
 	 */
-	if (res)
-		PQclear(res);
+	PQclear(res);
 
 	/*
 	 * Format the basic errcontext string.  Below, we'll add on something

@@ -425,11 +425,7 @@ bt_page_print_tuples(struct user_args *uargs)
 		tids_datum = (Datum *) palloc(nposting * sizeof(Datum));
 		for (int i = 0; i < nposting; i++)
 			tids_datum[i] = ItemPointerGetDatum(&tids[i]);
-		values[j++] = PointerGetDatum(construct_array(tids_datum,
-													  nposting,
-													  TIDOID,
-													  sizeof(ItemPointerData),
-													  false, TYPALIGN_SHORT));
+		values[j++] = PointerGetDatum(construct_array_builtin(tids_datum, nposting, TIDOID));
 		pfree(tids_datum);
 	}
 	else
@@ -610,6 +606,12 @@ bt_page_items_bytea(PG_FUNCTION_ARGS)
 		uargs = palloc(sizeof(struct user_args));
 
 		uargs->page = get_page_from_raw(raw_page);
+
+		if (PageIsNew(uargs->page))
+		{
+			MemoryContextSwitchTo(mctx);
+			PG_RETURN_NULL();
+		}
 
 		uargs->offset = FirstOffsetNumber;
 

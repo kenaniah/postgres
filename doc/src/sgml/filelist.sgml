@@ -105,6 +105,7 @@
 <!ENTITY storage    SYSTEM "storage.sgml">
 <!ENTITY tablesample-method SYSTEM "tablesample-method.sgml">
 <!ENTITY generic-wal SYSTEM "generic-wal.sgml">
+<!ENTITY custom-rmgr SYSTEM "custom-rmgr.sgml">
 <!ENTITY backup-manifest SYSTEM "backup-manifest.sgml">
 
 <!-- contrib information -->
@@ -147,6 +148,7 @@
 <!ENTITY pgsurgery       SYSTEM "pgsurgery.sgml">
 <!ENTITY pgtrgm          SYSTEM "pgtrgm.sgml">
 <!ENTITY pgvisibility    SYSTEM "pgvisibility.sgml">
+<!ENTITY pgwalinspect    SYSTEM "pgwalinspect.sgml">
 <!ENTITY postgres-fdw    SYSTEM "postgres-fdw.sgml">
 <!ENTITY seg             SYSTEM "seg.sgml">
 <!ENTITY contrib-spi     SYSTEM "contrib-spi.sgml">
@@ -173,7 +175,7 @@
 <!ENTITY sourcerepo SYSTEM "sourcerepo.sgml">
 
 <!ENTITY release    SYSTEM "release.sgml">
-<!ENTITY release-15     SYSTEM "release-15.sgml">
+<!ENTITY release-16 SYSTEM "release-16.sgml">
 
 <!ENTITY limits     SYSTEM "limits.sgml">
 <!ENTITY acronyms   SYSTEM "acronyms.sgml">

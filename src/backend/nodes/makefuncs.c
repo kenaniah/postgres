@@ -868,6 +868,25 @@ makeJsonBehavior(JsonBehaviorType type, Node *default_expr)
 }
 
 /*
+ * makeJsonTableJoinedPlan -
+ *	   creates a joined JsonTablePlan node
+ */
+Node *
+makeJsonTableJoinedPlan(JsonTablePlanJoinType type, Node *plan1, Node *plan2,
+						int location)
+{
+	JsonTablePlan *n = makeNode(JsonTablePlan);
+
+	n->plan_type = JSTP_JOINED;
+	n->join_type = type;
+	n->plan1 = castNode(JsonTablePlan, plan1);
+	n->plan2 = castNode(JsonTablePlan, plan2);
+	n->location = location;
+
+	return (Node *) n;
+}
+
+/*
  * makeJsonEncoding -
  *	  converts JSON encoding name to enum JsonEncoding
  */
@@ -908,14 +927,14 @@ makeJsonKeyValue(Node *key, Node *value)
  *	  creates a JsonIsPredicate node
  */
 Node *
-makeJsonIsPredicate(Node *expr, JsonFormat *format, JsonValueType value_type,
+makeJsonIsPredicate(Node *expr, JsonFormat *format, JsonValueType item_type,
 					bool unique_keys, int location)
 {
 	JsonIsPredicate *n = makeNode(JsonIsPredicate);
 
 	n->expr = expr;
 	n->format = format;
-	n->value_type = value_type;
+	n->item_type = item_type;
 	n->unique_keys = unique_keys;
 	n->location = location;
 

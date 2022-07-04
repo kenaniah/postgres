@@ -475,7 +475,7 @@ static relopt_real realRelOpts[] =
 };
 
 /* values from StdRdOptIndexCleanup */
-relopt_enum_elt_def StdRdOptIndexCleanupValues[] =
+static relopt_enum_elt_def StdRdOptIndexCleanupValues[] =
 {
 	{"auto", STDRD_OPTION_VACUUM_INDEX_CLEANUP_AUTO},
 	{"on", STDRD_OPTION_VACUUM_INDEX_CLEANUP_ON},
@@ -490,7 +490,7 @@ relopt_enum_elt_def StdRdOptIndexCleanupValues[] =
 };
 
 /* values from GistOptBufferingMode */
-relopt_enum_elt_def gistBufferingOptValues[] =
+static relopt_enum_elt_def gistBufferingOptValues[] =
 {
 	{"auto", GIST_OPTION_BUFFERING_AUTO},
 	{"on", GIST_OPTION_BUFFERING_ON},
@@ -499,7 +499,7 @@ relopt_enum_elt_def gistBufferingOptValues[] =
 };
 
 /* values from ViewOptCheckOption */
-relopt_enum_elt_def viewCheckOptValues[] =
+static relopt_enum_elt_def viewCheckOptValues[] =
 {
 	/* no value for NOT_SET */
 	{"local", VIEW_OPTION_CHECK_OPTION_LOCAL},
@@ -1177,8 +1177,7 @@ transformRelOptions(Datum oldOptions, List *defList, const char *namspace,
 		int			noldoptions;
 		int			i;
 
-		deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT,
-						  &oldoptions, NULL, &noldoptions);
+		deconstruct_array_builtin(array, TEXTOID, &oldoptions, NULL, &noldoptions);
 
 		for (i = 0; i < noldoptions; i++)
 		{
@@ -1345,8 +1344,7 @@ untransformRelOptions(Datum options)
 
 	array = DatumGetArrayTypeP(options);
 
-	deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT,
-					  &optiondatums, NULL, &noptions);
+	deconstruct_array_builtin(array, TEXTOID, &optiondatums, NULL, &noptions);
 
 	for (i = 0; i < noptions; i++)
 	{
@@ -1436,8 +1434,7 @@ parseRelOptionsInternal(Datum options, bool validate,
 	int			noptions;
 	int			i;
 
-	deconstruct_array(array, TEXTOID, -1, false, TYPALIGN_INT,
-					  &optiondatums, NULL, &noptions);
+	deconstruct_array_builtin(array, TEXTOID, &optiondatums, NULL, &noptions);
 
 	for (i = 0; i < noptions; i++)
 	{

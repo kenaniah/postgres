@@ -374,26 +374,16 @@ assign_locale_messages(const char *newval, void *extra)
 static void
 free_struct_lconv(struct lconv *s)
 {
-	if (s->decimal_point)
-		free(s->decimal_point);
-	if (s->thousands_sep)
-		free(s->thousands_sep);
-	if (s->grouping)
-		free(s->grouping);
-	if (s->int_curr_symbol)
-		free(s->int_curr_symbol);
-	if (s->currency_symbol)
-		free(s->currency_symbol);
-	if (s->mon_decimal_point)
-		free(s->mon_decimal_point);
-	if (s->mon_thousands_sep)
-		free(s->mon_thousands_sep);
-	if (s->mon_grouping)
-		free(s->mon_grouping);
-	if (s->positive_sign)
-		free(s->positive_sign);
-	if (s->negative_sign)
-		free(s->negative_sign);
+	free(s->decimal_point);
+	free(s->thousands_sep);
+	free(s->grouping);
+	free(s->int_curr_symbol);
+	free(s->currency_symbol);
+	free(s->mon_decimal_point);
+	free(s->mon_thousands_sep);
+	free(s->mon_grouping);
+	free(s->positive_sign);
+	free(s->negative_sign);
 }
 
 /*
@@ -991,7 +981,7 @@ search_locale_enum(LPWSTR pStr, DWORD dwFlags, LPARAM lparam)
 						test_locale, LOCALE_NAME_MAX_LENGTH))
 	{
 		/*
-		 * If the enumerated locale does not have a hyphen ("en") OR  the
+		 * If the enumerated locale does not have a hyphen ("en") OR the
 		 * lc_message input does not have an underscore ("English"), we only
 		 * need to compare the <Language> tags.
 		 */
@@ -1462,8 +1452,7 @@ make_icu_collator(const char *iculocstr,
 	/* could get here if a collation was created by a build with ICU */
 	ereport(ERROR,
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("ICU is not supported in this build"), \
-			 errhint("You need to rebuild PostgreSQL using %s.", "--with-icu")));
+			 errmsg("ICU is not supported in this build")));
 #endif							/* not USE_ICU */
 }
 
@@ -1626,7 +1615,7 @@ pg_newlocale_from_collation(Oid collid)
 		}
 
 		datum = SysCacheGetAttr(COLLOID, tp, Anum_pg_collation_collversion,
-									  &isnull);
+								&isnull);
 		if (!isnull)
 		{
 			char	   *actual_versionstr;
@@ -1993,7 +1982,7 @@ check_icu_locale(const char *icu_locale)
 {
 #ifdef USE_ICU
 	UCollator  *collator;
-	UErrorCode  status;
+	UErrorCode	status;
 
 	status = U_ZERO_ERROR;
 	collator = ucol_open(icu_locale, &status);
@@ -2008,8 +1997,7 @@ check_icu_locale(const char *icu_locale)
 #else
 	ereport(ERROR,
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("ICU is not supported in this build"), \
-			 errhint("You need to rebuild PostgreSQL using %s.", "--with-icu")));
+			 errmsg("ICU is not supported in this build")));
 #endif
 }
 

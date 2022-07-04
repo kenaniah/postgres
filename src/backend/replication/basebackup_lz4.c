@@ -3,7 +3,7 @@
  * basebackup_lz4.c
  *	  Basebackup sink implementing lz4 compression.
  *
- * Portions Copyright (c) 2010-2020, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2022, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/basebackup_lz4.c
@@ -42,7 +42,7 @@ static void bbsink_lz4_manifest_contents(bbsink *sink, size_t len);
 static void bbsink_lz4_end_archive(bbsink *sink);
 static void bbsink_lz4_cleanup(bbsink *sink);
 
-const bbsink_ops bbsink_lz4_ops = {
+static const bbsink_ops bbsink_lz4_ops = {
 	.begin_backup = bbsink_lz4_begin_backup,
 	.begin_archive = bbsink_lz4_begin_archive,
 	.archive_contents = bbsink_lz4_archive_contents,
@@ -59,7 +59,7 @@ const bbsink_ops bbsink_lz4_ops = {
  * Create a new basebackup sink that performs lz4 compression.
  */
 bbsink *
-bbsink_lz4_new(bbsink *next, bc_specification *compress)
+bbsink_lz4_new(bbsink *next, pg_compress_specification *compress)
 {
 #ifndef USE_LZ4
 	ereport(ERROR,
@@ -68,11 +68,11 @@ bbsink_lz4_new(bbsink *next, bc_specification *compress)
 	return NULL;				/* keep compiler quiet */
 #else
 	bbsink_lz4 *sink;
-	int		compresslevel;
+	int			compresslevel;
 
 	Assert(next != NULL);
 
-	if ((compress->options & BACKUP_COMPRESSION_OPTION_LEVEL) == 0)
+	if ((compress->options & PG_COMPRESSION_OPTION_LEVEL) == 0)
 		compresslevel = 0;
 	else
 	{

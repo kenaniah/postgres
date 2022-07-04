@@ -384,6 +384,7 @@ _readWindowClause(void)
 	READ_INT_FIELD(frameOptions);
 	READ_NODE_FIELD(startOffset);
 	READ_NODE_FIELD(endOffset);
+	READ_NODE_FIELD(runCondition);
 	READ_OID_FIELD(startInRangeFunc);
 	READ_OID_FIELD(endInRangeFunc);
 	READ_OID_FIELD(inRangeColl);
@@ -571,6 +572,7 @@ _readTableFunc(void)
 {
 	READ_LOCALS(TableFunc);
 
+	READ_ENUM_FIELD(functype, TableFuncType);
 	READ_NODE_FIELD(ns_uris);
 	READ_NODE_FIELD(ns_names);
 	READ_NODE_FIELD(docexpr);
@@ -581,7 +583,9 @@ _readTableFunc(void)
 	READ_NODE_FIELD(colcollations);
 	READ_NODE_FIELD(colexprs);
 	READ_NODE_FIELD(coldefexprs);
+	READ_NODE_FIELD(colvalexprs);
 	READ_BITMAPSET_FIELD(notnulls);
+	READ_NODE_FIELD(plan);
 	READ_INT_FIELD(ordinalitycol);
 	READ_LOCATION_FIELD(location);
 
@@ -1480,13 +1484,13 @@ _readJsonConstructorExpr(void)
 {
 	READ_LOCALS(JsonConstructorExpr);
 
+	READ_ENUM_FIELD(type, JsonConstructorType);
 	READ_NODE_FIELD(args);
 	READ_NODE_FIELD(func);
 	READ_NODE_FIELD(coercion);
-	READ_INT_FIELD(type);
 	READ_NODE_FIELD(returning);
-	READ_BOOL_FIELD(unique);
 	READ_BOOL_FIELD(absent_on_null);
+	READ_BOOL_FIELD(unique);
 	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
@@ -1519,15 +1523,43 @@ _readJsonExpr(void)
 	READ_NODE_FIELD(result_coercion);
 	READ_NODE_FIELD(format);
 	READ_NODE_FIELD(path_spec);
-	READ_NODE_FIELD(passing_values);
 	READ_NODE_FIELD(passing_names);
+	READ_NODE_FIELD(passing_values);
 	READ_NODE_FIELD(returning);
-	READ_NODE_FIELD(on_error);
 	READ_NODE_FIELD(on_empty);
+	READ_NODE_FIELD(on_error);
 	READ_NODE_FIELD(coercions);
 	READ_ENUM_FIELD(wrapper, JsonWrapper);
 	READ_BOOL_FIELD(omit_quotes);
 	READ_LOCATION_FIELD(location);
+
+	READ_DONE();
+}
+
+static JsonTableParent *
+_readJsonTableParent(void)
+{
+	READ_LOCALS(JsonTableParent);
+
+	READ_NODE_FIELD(path);
+	READ_STRING_FIELD(name);
+	READ_NODE_FIELD(child);
+	READ_BOOL_FIELD(outerJoin);
+	READ_INT_FIELD(colMin);
+	READ_INT_FIELD(colMax);
+	READ_BOOL_FIELD(errorOnError);
+
+	READ_DONE();
+}
+
+static JsonTableSibling *
+_readJsonTableSibling(void)
+{
+	READ_LOCALS(JsonTableSibling);
+
+	READ_NODE_FIELD(larg);
+	READ_NODE_FIELD(rarg);
+	READ_BOOL_FIELD(cross);
 
 	READ_DONE();
 }
@@ -1579,7 +1611,8 @@ _readJsonIsPredicate()
 	READ_LOCALS(JsonIsPredicate);
 
 	READ_NODE_FIELD(expr);
-	READ_ENUM_FIELD(value_type, JsonValueType);
+	READ_NODE_FIELD(format);
+	READ_ENUM_FIELD(item_type, JsonValueType);
 	READ_BOOL_FIELD(unique_keys);
 	READ_LOCATION_FIELD(location);
 
@@ -2164,6 +2197,7 @@ _readSubqueryScan(void)
 	ReadCommonScan(&local_node->scan);
 
 	READ_NODE_FIELD(subplan);
+	READ_ENUM_FIELD(scanstatus, SubqueryScanStatus);
 
 	READ_DONE();
 }
@@ -2545,11 +2579,14 @@ _readWindowAgg(void)
 	READ_INT_FIELD(frameOptions);
 	READ_NODE_FIELD(startOffset);
 	READ_NODE_FIELD(endOffset);
+	READ_NODE_FIELD(runCondition);
+	READ_NODE_FIELD(runConditionOrig);
 	READ_OID_FIELD(startInRangeFunc);
 	READ_OID_FIELD(endInRangeFunc);
 	READ_OID_FIELD(inRangeColl);
 	READ_BOOL_FIELD(inRangeAsc);
 	READ_BOOL_FIELD(inRangeNullsFirst);
+	READ_BOOL_FIELD(topWindow);
 
 	READ_DONE();
 }
@@ -3182,7 +3219,7 @@ parseNodeString(void)
 		return_value = _readJsonReturning();
 	else if (MATCH("JSONVALUEEXPR", 13))
 		return_value = _readJsonValueExpr();
-	else if (MATCH("JSONCTOREXPR", 12))
+	else if (MATCH("JSONCONSTRUCTOREXPR", 19))
 		return_value = _readJsonConstructorExpr();
 	else if (MATCH("JSONISPREDICATE", 15))
 		return_value = _readJsonIsPredicate();
@@ -3194,6 +3231,10 @@ parseNodeString(void)
 		return_value = _readJsonCoercion();
 	else if (MATCH("JSONITEMCOERCIONS", 17))
 		return_value = _readJsonItemCoercions();
+	else if (MATCH("JSONTABLEPARENT", 15))
+		return_value = _readJsonTableParent();
+	else if (MATCH("JSONTABLESIBLING", 16))
+		return_value = _readJsonTableSibling();
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);
