@@ -1374,8 +1374,8 @@ dumpDatabases(PGconn *conn)
 		else
 			create_opts = "--create";
 
-		/* Dump database-specific roles if server is running 15.0 or later */
-		if (server_version >= 150000)
+		/* Dump database-specific roles if server is running 16.0 or later */
+		if (server_version >= 160000)
 			dumpRoleMembership(conn, dbid);
 
 		if (filename)
