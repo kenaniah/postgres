@@ -67,7 +67,6 @@ case $host_os in
   darwin*) template=darwin ;;
 dragonfly*) template=netbsd ;;
  freebsd*) template=freebsd ;;
-    hpux*) template=hpux ;;
  linux*|gnu*|k*bsd*-gnu)
            template=linux ;;
    mingw*) template=win32 ;;
@@ -570,11 +569,6 @@ elif test "$PORTNAME" = "aix"; then
   PGAC_PROG_CXX_CFLAGS_OPT([-qnoansialias])
   PGAC_PROG_CC_CFLAGS_OPT([-qlonglong])
   PGAC_PROG_CXX_CFLAGS_OPT([-qlonglong])
-elif test "$PORTNAME" = "hpux"; then
-  # On some versions of HP-UX, libm functions do not set errno by default.
-  # Fix that by using +Olibmerrno if the compiler recognizes it.
-  PGAC_PROG_CC_CFLAGS_OPT([+Olibmerrno])
-  PGAC_PROG_CXX_CFLAGS_OPT([+Olibmerrno])
 fi
 
 AC_SUBST(CFLAGS_UNROLL_LOOPS)
@@ -1452,7 +1446,6 @@ AC_CHECK_HEADERS(m4_normalize([
 	sys/personality.h
 	sys/prctl.h
 	sys/procctl.h
-	sys/pstat.h
 	sys/resource.h
 	sys/select.h
 	sys/sem.h
@@ -1801,7 +1794,6 @@ AC_CHECK_FUNCS(m4_normalize([
 	poll
 	posix_fallocate
 	ppoll
-	pstat
 	pthread_is_threaded_np
 	readlink
 	readv
@@ -1927,10 +1919,9 @@ fi
 
 if test "$PORTNAME" = "win32" -o "$PORTNAME" = "cygwin"; then
 	# Cygwin and (apparently, based on test results) Mingw both
-	# have a broken strtof(), so substitute the same replacement
-	# code we use with VS2013. That's not a perfect fix, since
-	# (unlike with VS2013) it doesn't avoid double-rounding, but
-	# we have no better options. To get that, though, we have to
+	# have a broken strtof(), so substitute its implementation.
+	# That's not a perfect fix, since it doesn't avoid double-rounding,
+	# but we have no better options. To get that, though, we have to
 	# force the file to be compiled despite HAVE_STRTOF.
 	AC_LIBOBJ([strtof])
 	AC_MSG_NOTICE([On $host_os we will use our strtof wrapper.])
