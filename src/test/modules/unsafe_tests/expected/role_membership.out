@@ -14,8 +14,8 @@ SELECT
   admin_option,
   d.datname
 FROM pg_auth_members a
-LEFT JOIN pg_roles r ON r.oid = a.roleid
-LEFT JOIN pg_roles m ON m.oid = a.member
+JOIN pg_roles r ON r.oid = a.roleid
+JOIN pg_roles m ON m.oid = a.member
 LEFT JOIN pg_roles g ON g.oid = a.grantor
 LEFT JOIN pg_database d ON d.oid = a.dbid
 WHERE
